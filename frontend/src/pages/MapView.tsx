@@ -1,39 +1,24 @@
 import { motion } from "framer-motion";
-
-interface MapNode {
-  id: string;
-  label: string;
-  x: number;
-  y: number;
-  status: "current" | "discovered" | "hidden";
-}
-
-const nodes: MapNode[] = [
-  { id: "1", label: "Village of Thornhaven", x: 150, y: 100, status: "discovered" },
-  { id: "2", label: "Dark Forest", x: 350, y: 80, status: "discovered" },
-  { id: "3", label: "Ancient Ruins", x: 550, y: 150, status: "current" },
-  { id: "4", label: "Cursed Swamp", x: 300, y: 250, status: "discovered" },
-  { id: "5", label: "Dragon's Lair", x: 650, y: 320, status: "hidden" },
-  { id: "6", label: "Crystal Caverns", x: 500, y: 350, status: "hidden" },
-  { id: "7", label: "Tower of Shadows", x: 200, y: 380, status: "hidden" },
-  { id: "8", label: "Sacred Temple", x: 450, y: 450, status: "hidden" },
-];
-
-const edges: [string, string][] = [
-  ["1", "2"],
-  ["2", "3"],
-  ["1", "4"],
-  ["4", "2"],
-  ["3", "5"],
-  ["3", "6"],
-  ["4", "7"],
-  ["6", "8"],
-  ["7", "8"],
-];
-
-const getNode = (id: string) => nodes.find((n) => n.id === id)!;
+import { useGame } from "../context/GameContext";
 
 const MapView = () => {
+  const { map } = useGame();
+
+  if (!map) {
+    return (
+      <div className="max-w-3xl mx-auto py-12">
+        <div className="narrative-panel text-center">
+          <p className="font-body text-muted-foreground mb-3">
+            No map has been generated yet.
+          </p>
+          <a href="/adventure" className="btn-fantasy text-sm inline-block">Start Adventure</a>
+        </div>
+      </div>
+    );
+  }
+
+  const getNode = (id: string) => map.nodes.find((n) => n.id === id);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -48,17 +33,19 @@ const MapView = () => {
         <div className="relative" style={{ width: 800, height: 540 }}>
         {/* SVG connections */}
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 800 540">
-          {edges.map(([a, b]) => {
-            const na = getNode(a);
-            const nb = getNode(b);
+          {map.edges.map((edge, index) => {
+            const na = getNode(edge.from);
+            const nb = getNode(edge.to);
+            if (!na || !nb) return null;
+            
             const anyHidden = na.status === "hidden" || nb.status === "hidden";
             return (
               <line
-                key={`${a}-${b}`}
-                x1={na.x}
-                y1={na.y}
-                x2={nb.x}
-                y2={nb.y}
+                key={`edge-${index}`}
+                x1={na.x || 0}
+                y1={na.y || 0}
+                x2={nb.x || 0}
+                y2={nb.y || 0}
                 stroke="hsl(40 49% 56%)"
                 strokeWidth={2}
                 strokeDasharray={anyHidden ? "6 4" : "none"}
@@ -69,7 +56,7 @@ const MapView = () => {
         </svg>
 
         {/* Nodes */}
-        {nodes.map((node, i) => (
+        {map.nodes.map((node, i) => (
           <motion.div
             key={node.id}
             initial={{ opacity: 0, scale: 0.5 }}
@@ -77,33 +64,24 @@ const MapView = () => {
             transition={{ delay: i * 0.08, duration: 0.4 }}
             className="absolute flex flex-col items-center"
             style={{
-              left: node.x - 36,
-              top: node.y - 36,
+              left: (node.x || 0) - 45,
+              top: (node.y || 0) - 45,
             }}
           >
             <div
-              className={`w-[72px] h-[72px] rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+              className={`w-[90px] h-[90px] rounded-full border-2 flex items-center justify-center transition-all duration-300 shadow-lg ${
                 node.status === "current"
                   ? "border-primary bg-primary/20 animate-pulse-glow"
                   : node.status === "discovered"
                   ? "border-primary/40 bg-card"
                   : "border-muted/30 bg-muted/20 opacity-30"
               }`}
+              title={node.status !== "hidden" ? node.description : "Unknown location"}
             >
-              <span className="font-display text-[10px] text-center leading-tight px-1 text-foreground">
-                {node.status === "hidden" ? "???" : node.label.split(" ").slice(-1)[0]}
+              <span className="font-display text-[9px] text-center leading-tight px-2 text-foreground break-words overflow-hidden max-h-[70px]">
+                {node.status === "hidden" ? "???" : node.name}
               </span>
             </div>
-            {node.status !== "hidden" && (
-              <span className="mt-1 font-body text-[10px] text-muted-foreground text-center max-w-[90px]">
-                {node.label}
-              </span>
-            )}
-            {node.status === "current" && (
-              <span className="mt-0.5 font-display text-[8px] uppercase tracking-widest text-primary">
-                You are here
-              </span>
-            )}
           </motion.div>
         ))}
         </div>
@@ -113,3 +91,5 @@ const MapView = () => {
 };
 
 export default MapView;
+
+

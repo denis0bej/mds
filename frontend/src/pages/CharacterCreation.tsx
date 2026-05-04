@@ -210,8 +210,11 @@ const CharacterCreation = () => {
         body: JSON.stringify(characterData),
       });
       
+      console.log("Fetch response:", response); // Log the full response
+
       if (!response.ok) {
-        throw new Error("Failed to save character");
+        console.error("Response not OK:", response.status, response.statusText, await response.text()); // Log status and text for non-OK responses
+        throw new Error("Failed to save character: " + response.statusText);
       }
       
       const result = await response.json();
