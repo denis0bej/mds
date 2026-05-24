@@ -69,10 +69,21 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated.")
     token = authorization.removeprefix("Bearer ").strip()
-    user = get_user_by_token(token)
-    if not user:
+    try:
+        from database import get_client
+        res = get_client().auth.get_user(token)
+        supabase_user = res.user
+        if not supabase_user:
+            raise HTTPException(status_code=401, detail="Invalid or expired session.")
+        return {
+            "id": supabase_user.id,
+            "email": supabase_user.email,
+            "username": (supabase_user.user_metadata or {}).get("username", supabase_user.email),
+        }
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired session.")
-    return user
 
 
 def _public_user(user: dict) -> dict:
