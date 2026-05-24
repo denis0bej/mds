@@ -4,3 +4,4 @@ backend/venv/
 node_modules/
 backend/__pycache__/
 backend/data/
+backend/data/app.db
