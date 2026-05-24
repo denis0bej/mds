@@ -56,7 +56,7 @@ export default function CreateAccount() {
       transition={{ duration: 0.5 }}
       className="max-w-md mx-auto"
     >
-      <div className="narrative-panel">
+      <div className="auth-form-panel">
         <div className="flex items-center gap-3 mb-6">
           <UserPlus className="h-6 w-6 text-primary" />
           <h1 className="text-2xl font-display text-primary text-gold-glow tracking-wider">
@@ -75,7 +75,7 @@ export default function CreateAccount() {
             </label>
             <Input
               autoComplete="username"
-              className="bg-input border-gold"
+              className="bg-input border-gold rounded-md"
               {...register("username")}
             />
             {errors.username && (
@@ -90,7 +90,7 @@ export default function CreateAccount() {
             <Input
               type="email"
               autoComplete="email"
-              className="bg-input border-gold"
+              className="bg-input border-gold rounded-md"
               {...register("email")}
             />
             {errors.email && (
@@ -105,7 +105,7 @@ export default function CreateAccount() {
             <Input
               type="password"
               autoComplete="new-password"
-              className="bg-input border-gold"
+              className="bg-input border-gold rounded-md"
               {...register("password")}
             />
             {errors.password && (
@@ -120,7 +120,7 @@ export default function CreateAccount() {
             <Input
               type="password"
               autoComplete="new-password"
-              className="bg-input border-gold"
+              className="bg-input border-gold rounded-md"
               {...register("confirmPassword")}
             />
             {errors.confirmPassword && (
@@ -130,7 +130,7 @@ export default function CreateAccount() {
 
           {submitError && <p className="text-destructive text-sm">{submitError}</p>}
 
-          <button type="submit" disabled={isSubmitting} className="btn-fantasy w-full disabled:opacity-50">
+          <button type="submit" disabled={isSubmitting} className="btn-create-account">
             {isSubmitting ? "Creating account..." : "Create Account"}
           </button>
         </form>
