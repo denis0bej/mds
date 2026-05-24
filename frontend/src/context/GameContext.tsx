@@ -22,6 +22,7 @@ export type MapNode = {
   name: string;
   description: string;
   status: "current" | "discovered" | "hidden";
+  isGoal?: boolean;
   x?: number;
   y?: number;
 };
@@ -45,6 +46,7 @@ interface GameState {
   narrativeIntro: string | null;
   map: GameMap | null;
   setAdventureData: (narrativeIntro: string, map: GameMap) => void;
+  updateMap: (map: GameMap) => void;
   clearAdventureData: () => void;
   isLoading: boolean;
 }
@@ -60,6 +62,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const setAdventureData = (intro: string, mapData: GameMap) => {
     setNarrativeIntro(intro);
+    setMap(mapData);
+  };
+
+  const updateMap = (mapData: GameMap) => {
     setMap(mapData);
   };
 
@@ -104,6 +110,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       narrativeIntro, 
       map, 
       setAdventureData, 
+      updateMap,
       clearAdventureData,
       isLoading 
     }}>

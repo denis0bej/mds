@@ -83,6 +83,7 @@ Structura JSON cerută:
         "name": "Nume locație",
         "description": "Scurtă descriere atmosferică",
         "status": "current",
+        "isGoal": false,
         "x": 150,
         "y": 100
       }
@@ -99,9 +100,11 @@ Structura JSON cerută:
 
 Reguli pentru hartă:
 - Generează exact 6-10 noduri.
-- Nodul 1 (start) -> status: "current".
-- Nodurile 2-3 -> status: "discovered".
-- Restul nodurilor -> status: "hidden".
+- Nodul 1 (start) -> status: "current", isGoal: false.
+- Nodurile 2-3 -> status: "discovered", isGoal: false.
+- Restul nodurilor -> status: "hidden", isGoal: false — cu EXCEPȚIA nodului final.
+- EXACT UN singur nod trebuie să aibă isGoal: true. Acesta este destinația finală a aventurii (boss, artefact, ritual etc.) și trebuie să fie status: "hidden".
+- TOATE nodurile trebuie să fie conectate în graf — niciun nod izolat. Fiecare nod trebuie să aibă cel puțin un edge care îl conectează la alt nod.
 - Harta trebuie să fie coerentă tematic cu aventura.
 - Include coordonate x (100-700) și y (100-440) pentru fiecare nod pentru a fi afișate pe o pânză de 800x540.
 - Dacă ai date despre personaj (nume, rasă, clasă, backstory), integrează-le în narațiune și în numele locațiilor."""
@@ -154,10 +157,6 @@ async def handle_action(req: ActionRequest):
         return {"response": response.choices[0].message.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/health")
-async def health():
-    return {"status": "ok"}
 
 @router.get("/health")
 async def health():
