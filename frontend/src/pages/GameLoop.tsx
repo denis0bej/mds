@@ -1,34 +1,12 @@
 import { useState, FormEvent, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Heart,
-  Shield,
-  Sword,
-  Scroll,
-  Gem,
-  Flame,
-  Hexagon,
-  Compass,
-  Footprints,
-} from "lucide-react";
+import { Compass, Footprints } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useGame, getAvailableTravelDestinations } from "@/context/GameContext";
 import { NarrationPanel } from "@/components/NarrationPanel";
+import { CharacterPanel } from "@/components/CharacterPanel";
 import { DiceRoller, ROLL_DURATION_MS } from "@/components/DiceRoller";
 import { toRollCheck, toRollResult, type RollCheck, type RollResult } from "@/lib/dice";
-
-const inventoryItems = [
-  { name: "Elvish Longbow", icon: Sword, desc: "+2 Attack" },
-  { name: "Healing Potion", icon: Heart, desc: "Restores 2d4+2 HP" },
-  { name: "Ancient Map", icon: Scroll, desc: "Quest Item" },
-  { name: "Fire Gem", icon: Gem, desc: "1d6 Fire Damage" },
-];
-
-const statusEffects = [
-  { name: "Darkvision", icon: Hexagon, color: "text-primary" },
-  { name: "Blessed", icon: Shield, color: "text-primary" },
-  { name: "Burning", icon: Flame, color: "text-accent" },
-];
 
 type DiceUiState = {
   check: RollCheck;
@@ -53,6 +31,7 @@ const GameLoop = () => {
     actionError,
     lastRoll,
     lastCheck,
+    runtimeState,
     progressCompletedNodeIds,
   } = useGame();
 
@@ -266,77 +245,7 @@ const GameLoop = () => {
       </div>
 
       <div className="lg:w-[40%] space-y-6">
-        <div className="bg-card border border-gold rounded-sm p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-display text-xs uppercase tracking-wider text-primary">
-              Hit Points
-            </span>
-            <span className="font-display text-sm text-foreground">32 / 45</span>
-          </div>
-          <div className="w-full h-3 bg-muted rounded-sm overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: "71%" }}
-              transition={{ duration: 1, delay: 0.3 }}
-              className="h-full bg-accent rounded-sm"
-              style={{
-                background: "linear-gradient(90deg, hsl(0 69% 35%), hsl(0 69% 45%))",
-              }}
-            />
-          </div>
-          <div className="flex gap-4 mt-3">
-            <div className="text-xs text-muted-foreground">
-              <span className="text-foreground font-display">AC:</span> 16
-            </div>
-            <div className="text-xs text-muted-foreground">
-              <span className="text-foreground font-display">Level:</span> 5
-            </div>
-            {character && (
-              <div className="text-xs text-muted-foreground truncate">
-                <span className="text-foreground font-display">Hero:</span> {character.name}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-card border border-gold rounded-sm p-4">
-          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">
-            Inventory
-          </h3>
-          <div className="space-y-2">
-            {inventoryItems.map((item) => (
-              <div
-                key={item.name}
-                className="flex items-center gap-3 p-2 rounded-sm hover:bg-muted/30 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-sm bg-muted/50 border border-gold flex items-center justify-center">
-                  <item.icon className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-body text-foreground">{item.name}</div>
-                  <div className="text-xs text-muted-foreground">{item.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-card border border-gold rounded-sm p-4">
-          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">
-            Status Effects
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {statusEffects.map((effect) => (
-              <div
-                key={effect.name}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-muted/30 border border-gold"
-              >
-                <effect.icon className={`h-3.5 w-3.5 ${effect.color}`} />
-                <span className="text-xs font-body text-foreground">{effect.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <CharacterPanel character={character} runtimeState={runtimeState} />
 
         <AnimatePresence>
           {diceUi && (
