@@ -1,40 +1,35 @@
 import hashlib
 import os
 import secrets
-import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "app.db")
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+_client: Optional[Client] = None
 
 
-def _connect() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_client() -> Client:
+    global _client
+    if _client is None:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
+        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _client
 
 
 def init_db() -> None:
-    with _connect() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL UNIQUE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS auth_tokens (
-                token TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            );
-            """
-        )
+    try:
+        get_client()
+        print("[INFO] Supabase connected successfully.")
+    except RuntimeError as e:
+        print(f"[WARNING] Supabase not configured: {e}")
 
 
 def hash_password(password: str) -> str:
@@ -56,70 +51,60 @@ def verify_password(password: str, stored: str) -> bool:
 def create_user(username: str, email: str, password: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     password_hash = hash_password(password)
-    with _connect() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO users (username, email, password_hash, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (username, email.lower(), password_hash, now),
-        )
-        user_id = cursor.lastrowid
-    return get_user_by_id(user_id)
+    db = get_client()
+    res = db.table("users").insert({
+        "username": username,
+        "email": email.lower(),
+        "password_hash": password_hash,
+        "created_at": now,
+    }).execute()
+    if res.data:
+        print(f"[Supabase] OK User created: {res.data[0]['username']} (id={res.data[0]['id']})")
+        return res.data[0]
+    else:
+        print(f"[Supabase] FAIL - no data returned for user: {username}")
+        raise Exception("User creation failed - no data returned from Supabase.")
 
 
 def get_user_by_id(user_id: int) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT id, username, email, created_at FROM users WHERE id = ?",
-            (user_id,),
-        ).fetchone()
-    return dict(row) if row else None
+    db = get_client()
+    res = db.table("users").select("id, username, email, created_at").eq("id", user_id).single().execute()
+    return res.data if res.data else None
 
 
 def get_user_by_email(email: str) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT id, username, email, password_hash, created_at FROM users WHERE email = ?",
-            (email.lower(),),
-        ).fetchone()
-    return dict(row) if row else None
+    db = get_client()
+    res = db.table("users").select("id, username, email, password_hash, created_at").eq("email", email.lower()).execute()
+    return res.data[0] if res.data else None
 
 
 def get_user_by_username(username: str) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT id, username, email, password_hash, created_at FROM users WHERE username = ?",
-            (username,),
-        ).fetchone()
-    return dict(row) if row else None
+    db = get_client()
+    res = db.table("users").select("id, username, email, password_hash, created_at").eq("username", username).execute()
+    return res.data[0] if res.data else None
 
 
 def create_auth_token(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc).isoformat()
-    with _connect() as conn:
-        conn.execute(
-            "INSERT INTO auth_tokens (token, user_id, created_at) VALUES (?, ?, ?)",
-            (token, user_id, now),
-        )
+    db = get_client()
+    db.table("auth_tokens").insert({
+        "token": token,
+        "user_id": user_id,
+        "created_at": now,
+    }).execute()
     return token
 
 
 def delete_auth_token(token: str) -> None:
-    with _connect() as conn:
-        conn.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+    db = get_client()
+    db.table("auth_tokens").delete().eq("token", token).execute()
 
 
 def get_user_by_token(token: str) -> Optional[dict]:
-    with _connect() as conn:
-        row = conn.execute(
-            """
-            SELECT u.id, u.username, u.email, u.created_at
-            FROM users u
-            JOIN auth_tokens t ON t.user_id = u.id
-            WHERE t.token = ?
-            """,
-            (token,),
-        ).fetchone()
-    return dict(row) if row else None
+    db = get_client()
+    res = db.table("auth_tokens").select("user_id").eq("token", token).execute()
+    if not res.data:
+        return None
+    user_id = res.data[0]["user_id"]
+    return get_user_by_id(user_id)

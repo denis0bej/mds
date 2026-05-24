@@ -7,97 +7,96 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiFetch, getAuthToken, setAuthToken } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
+import type { User, Session } from "@supabase/supabase-js";
 
 export type AuthUser = {
-  id: number;
-  username: string;
+  id: string;
   email: string;
-  created_at: string;
-};
-
-type AuthResponse = {
-  token: string;
-  user: AuthUser;
+  username: string;
 };
 
 type AuthContextValue = {
   user: AuthUser | null;
+  session: Session | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function toAuthUser(user: User): AuthUser {
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    username: user.user_metadata?.username ?? user.email?.split("@")[0] ?? "Adventurer",
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const restoreSession = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) {
-      setUser(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ? toAuthUser(session.user) : null);
       setIsLoading(false);
-      return;
-    }
+    });
 
-    try {
-      const data = await apiFetch<{ user: AuthUser }>("/auth/me", { auth: true });
-      setUser(data.user);
-    } catch {
-      setAuthToken(null);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ? toAuthUser(session.user) : null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    restoreSession();
-  }, [restoreSession]);
-
   const login = useCallback(async (email: string, password: string) => {
-    const data = await apiFetch<AuthResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    setAuthToken(data.token);
-    setUser(data.user);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
   }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {
-    const data = await apiFetch<AuthResponse>("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ username, email, password }),
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { username } },
     });
-    setAuthToken(data.token);
-    setUser(data.user);
+    if (error) throw new Error(error.message);
+  }, []);
+
+  const loginWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+    if (error) throw new Error(error.message);
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      await apiFetch("/auth/logout", { method: "POST", auth: true });
-    } catch {
-      // Clear local session even if the server call fails.
-    } finally {
-      setAuthToken(null);
-      setUser(null);
-    }
+    await supabase.auth.signOut();
   }, []);
 
   const value = useMemo(
     () => ({
       user,
+      session,
       isLoading,
       isAuthenticated: Boolean(user),
       login,
       register,
+      loginWithGoogle,
       logout,
     }),
-    [user, isLoading, login, register, logout],
+    [user, session, isLoading, login, register, loginWithGoogle, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
