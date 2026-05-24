@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import openai
 from openai import OpenAI
 import os
@@ -19,11 +19,21 @@ from rules_engine import (
 
 load_dotenv()
 router = APIRouter()
-# Configure OpenAI client
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    timeout=60.0
-)
+
+_openai_client: Optional[OpenAI] = None
+
+
+def get_openai_client() -> OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="OPENAI_API_KEY is not configured. Add it to backend/.env for AI features.",
+            )
+        _openai_client = OpenAI(api_key=api_key, timeout=60.0)
+    return _openai_client
 
 # Asigurăm existența folderului pentru sesiuni
 os.makedirs("data", exist_ok=True)
@@ -253,61 +263,110 @@ async def generate_adventure(req: AdventureRequest):
     elif req.character:
         character_context = req.character
     
-    system_prompt = """Ești un "Story Weaver" — un maestru narator D&D. 
-Misiunea ta este să generezi o introducere epică și o hartă a aventurii bazată pe descrierea jucătorului.
+    system_prompt = """Ești "World Architect" — agentul de design al aventurii D&D.
+Misiunea ta: generezi introducerea narativă și harta aventurii ca un GRAF detaliat. Fiecare nod TREBUIE să conțină un eveniment concret (capcană, monstru, NPC, puzzle, comoară etc.) astfel încât Dungeon Master-ul să aibă tot contextul necesar pentru a rula scena.
 
 Răspunde EXCLUSIV cu un obiect JSON valid, fără markdown, fără explicații suplimentare.
 
-Structura JSON cerută:
+REGULI CRITICE (NU LE ÎNCĂLCA):
+1. Generează exact 5-8 noduri (NU mai multe — vrem profunzime, nu cantitate).
+2. FIECARE nod TREBUIE să aibă câmpul "content" complet populat — NU sări peste. Un nod fără "content" este INVALID.
+3. FIECARE nod TREBUIE să aibă câmpul "isGoal" (true sau false) și "status" (current | discovered | hidden).
+4. EXACT UN singur nod are isGoal: true și status: "hidden" (destinația finală — boss, artefact, ritual).
+5. Nodul 1 (start) -> status: "current", isGoal: false.
+6. 2-3 noduri -> status: "discovered", isGoal: false.
+7. Restul -> status: "hidden", isGoal: false.
+8. TOATE nodurile sunt conectate în graf prin edges — niciun nod izolat.
+9. Coordonate: x ∈ [100, 700], y ∈ [100, 440].
+10. Variază scene_type între noduri: NU toate noduri sunt "combat". Mixează exploration, social, trap, puzzle, reward, combat.
+
+EXEMPLU COMPLET de nod corect populat (FOLOSEȘTE ACEST NIVEL DE DETALIU pentru FIECARE nod):
 {
-  "narrativeIntro": "2-3 paragrafe de introducere epică, adaptată descrierii și personajului (dacă e disponibil).",
-  "map": {
-    "nodes": [
+  "id": "3",
+  "name": "Cripta Răsucită",
+  "description": "O criptă uitată sub rădăcinile unui stejar bătrân, plină de inscripții pe jumătate șterse.",
+  "status": "discovered",
+  "isGoal": false,
+  "x": 320,
+  "y": 240,
+  "content": {
+    "summary": "Jucătorul intră într-o criptă în care un schelet-gardian protejează o cheie ritualică. O placă de presiune declanșează săgeți otrăvite.",
+    "scene_type": "mixed",
+    "narrative_seed": "Aerul este greu, mirosind a praf umed și mucegai. Făclii stinse atârnă pe pereți, iar dale sparte trădează vechimea locului. În centru, un sarcofag de piatră sculptat cu rune. Pe podea, o singură dală mai netedă decât celelalte — semn al unei capcane. La jumătatea drumului spre sarcofag, o siluetă în armură ruginită pare să-și ridice încet capul...",
+    "elements": [
       {
-        "id": "1",
-        "name": "Nume locație",
-        "description": "Scurtă descriere atmosferică",
-        "status": "current",
-        "isGoal": false,
-        "x": 150,
-        "y": 100
+        "type": "trap",
+        "name": "Placa de presiune cu săgeți otrăvite",
+        "description": "O dală ascunsă declanșează săgeți din pereți la trecere.",
+        "mechanics": { "dc": 13, "check_type": "DEX save", "damage": "2d6 piercing + 1d4 poison", "hp": 0, "ac": 0, "cr": null },
+        "rewards": []
+      },
+      {
+        "type": "monster",
+        "name": "Schelet-Gardian",
+        "description": "Un schelet trezit de profanare, înarmat cu o sabie ruginită dar mortală.",
+        "mechanics": { "dc": 0, "check_type": "Attack Roll", "damage": "1d6+2 slashing", "hp": 13, "ac": 13, "cr": "1/4" },
+        "rewards": [
+          { "type": "gold", "name": "10 piese de aur", "description": "Găsite în pungă la centura gardianului." }
+        ]
+      },
+      {
+        "type": "key_item",
+        "name": "Cheia Ritualică",
+        "description": "O cheie de obsidian gravată cu rune — necesară pentru deblocarea altarului final.",
+        "mechanics": { "dc": 0, "check_type": null, "damage": null, "hp": 0, "ac": 0, "cr": null },
+        "rewards": [
+          { "type": "key_item", "name": "Cheia Ritualică", "description": "Necesară pentru nodul boss." }
+        ]
       }
     ],
-    "edges": [
-      {
-        "from": "1",
-        "to": "2",
-        "condition": "Opțional - ce trebuie să facă jucătorul pentru a traversa"
-      }
-    ]
+    "completion_conditions": ["A învins/evitat scheletul-gardian", "A obținut Cheia Ritualică"],
+    "failure_consequences": ["Pierde 1d4 HP din otravă dacă declanșează capcana"]
   }
 }
 
-Reguli pentru hartă:
-- Generează exact 6-10 noduri.
-- Nodul 1 (start) -> status: "current", isGoal: false.
-- Nodurile 2-3 -> status: "discovered", isGoal: false.
-- Restul nodurilor -> status: "hidden", isGoal: false — cu EXCEPȚIA nodului final.
-- EXACT UN singur nod trebuie să aibă isGoal: true. Acesta este destinația finală a aventurii (boss, artefact, ritual etc.) și trebuie să fie status: "hidden".
-- TOATE nodurile trebuie să fie conectate în graf — niciun nod izolat. Fiecare nod trebuie să aibă cel puțin un edge care îl conectează la alt nod.
-- Harta trebuie să fie coerentă tematic cu aventura.
-- Include coordonate x (100-700) și y (100-440) pentru fiecare nod pentru a fi afișate pe o pânză de 800x540.
-- Dacă ai date despre personaj (nume, rasă, clasă, backstory), integrează-le în narațiune și în numele locațiilor."""
+Reguli pentru content (per nod):
+- "summary" — 1-2 propoziții, ce se întâmplă, miza scenei.
+- "scene_type" — UNUL din: exploration | trap | combat | social | puzzle | boss | reward | mixed.
+- "narrative_seed" — 3-5 propoziții atmosferice pentru DM.
+- "elements" — CEL PUȚIN 1 element interactiv (ideal 2-3). Tipuri: trap | monster | npc | item | environmental_hazard | boss | reward | clue | key_item.
+- "mechanics" cu valori realiste D&D 5e. Pentru elemente non-mecanice pune dc: 0, damage: null, hp: 0.
+- "completion_conditions" — condiții clare, verificabile.
+- "failure_consequences" — opțional, poate fi [].
+
+Scalare dificultate: start DC 10-12 → mid DC 12-15 → boss DC 15-20.
+Boss/mini-boss DOAR în noduri centrale sau finale, NICIODATĂ în start.
+
+NarrativeIntro: 2-3 paragrafe epice integrând rasa/clasa/backstory personajului.
+
+Verifică înainte de a returna:
+✓ Toate nodurile au "content" populat?
+✓ Toate nodurile au "isGoal" și "status"?
+✓ Există exact 1 nod cu isGoal: true?
+✓ scene_type variază între noduri?
+✓ Fiecare nod are cel puțin 1 element în "elements"?"""
 
     user_content = f"Descriere aventură: {req.description}"
     if character_context:
-        user_content += f"\n\nContext personaj: {json.dumps(character_context)}"
+        user_content += f"\n\nContext personaj: {json.dumps(character_context, ensure_ascii=False)}"
+    user_content += (
+        "\n\nReamintire: FIECARE nod TREBUIE să aibă câmpul \"content\" complet populat "
+        "(summary, scene_type, narrative_seed, elements cu mechanics, completion_conditions). "
+        "Nu omite acest câmp pentru niciun nod."
+    )
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ],
-            response_format={ "type": "json_object" }
+            response_format={"type": "json_object"},
+            max_tokens=8192,
+            temperature=0.85,
         )
-        
+
         raw_content = response.choices[0].message.content
         try:
             adventure_data = json.loads(raw_content)
@@ -317,17 +376,82 @@ Reguli pentru hartă:
                 "detail": "LLM returned non-parseable JSON",
                 "raw": raw_content[:500]
             })
-        
+
         return {
             "narrativeIntro": adventure_data.get("narrativeIntro"),
-            "map": adventure_data.get("map"),
+            "map": _normalize_map(adventure_data.get("map")),
             "session_id": used_session_id
         }
 
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="Maestrul Dungeonului a adormit. Răspunsul a întârziat prea mult.")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Generation failed", "detail": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# World Architect — defensive normalizer.
+# Ensures every node has a usable `content` block even if the LLM drops fields.
+# ---------------------------------------------------------------------------
+_DEFAULT_MECHANICS: Dict[str, Any] = {
+    "dc": 0, "check_type": None, "damage": None, "hp": 0, "ac": 0, "cr": None
+}
+
+
+def _ensure_element(elem: Any) -> Dict[str, Any]:
+    if not isinstance(elem, dict):
+        elem = {}
+    mechanics = {**_DEFAULT_MECHANICS, **(elem.get("mechanics") or {})}
+    return {
+        "type": elem.get("type") or "clue",
+        "name": elem.get("name") or "Element misterios",
+        "description": elem.get("description") or "Un detaliu pe care DM-ul îl va explora la fața locului.",
+        "mechanics": mechanics,
+        "rewards": elem.get("rewards") or [],
+    }
+
+
+def _ensure_content(node: Dict[str, Any]) -> Dict[str, Any]:
+    raw = node.get("content")
+    if not isinstance(raw, dict):
+        raw = {}
+    elements = raw.get("elements")
+    if not isinstance(elements, list) or not elements:
+        elements = [{
+            "type": "clue",
+            "name": f"Indiciu în {node.get('name', 'această locație')}",
+            "description": "Un detaliu narativ pe care DM-ul îl va dezvolta la sosirea jucătorului.",
+            "mechanics": dict(_DEFAULT_MECHANICS),
+            "rewards": [],
+        }]
+    else:
+        elements = [_ensure_element(e) for e in elements]
+    return {
+        "summary": raw.get("summary") or node.get("description") or "Scenă de explorat.",
+        "scene_type": raw.get("scene_type") or "exploration",
+        "narrative_seed": raw.get("narrative_seed") or node.get("description") or "Scenă fără context detaliat.",
+        "elements": elements,
+        "completion_conditions": raw.get("completion_conditions") or [],
+        "failure_consequences": raw.get("failure_consequences") or [],
+    }
+
+
+def _normalize_map(raw_map: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw_map, dict):
+        return raw_map
+    nodes = raw_map.get("nodes") or []
+    normalized = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        n = dict(node)
+        n.setdefault("isGoal", False)
+        n.setdefault("status", "hidden")
+        n["content"] = _ensure_content(n)
+        normalized.append(n)
+    return {"nodes": normalized, "edges": raw_map.get("edges") or []}
 
 @router.post("/game/enter-node")
 async def enter_node(req: EnterNodeRequest):
@@ -372,7 +496,7 @@ Character:
         user_content += f"\n\nGame state:\n{json.dumps(req.game_state, indent=2)}"
 
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -409,7 +533,7 @@ async def game_action(req: GameActionRequest):
     runtime_state = _extract_runtime_state(req)
 
     try:
-        classify_response = client.chat.completions.create(
+        classify_response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
@@ -434,7 +558,7 @@ async def game_action(req: GameActionRequest):
 
             resolve_content = user_content + f"\n\nRoll result (already resolved by Rules Engine):\n{json.dumps(roll_result, indent=2)}\n\nResolve the action narratively using this outcome."
 
-            resolve_response = client.chat.completions.create(
+            resolve_response = get_openai_client().chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
@@ -469,7 +593,7 @@ async def game_action(req: GameActionRequest):
 @router.post("/action")
 async def handle_action(req: ActionRequest):
     try:
-        response = client.chat.completions.create(
+        response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "Ești un Game Master pentru un joc D&D. Răspunzi la acțiunile jucătorului narativ și decizi consecințele."},

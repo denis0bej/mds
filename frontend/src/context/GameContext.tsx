@@ -29,6 +29,61 @@ export interface CharacterData {
   stats: CharacterStats;
 }
 
+export type SceneType =
+  | "exploration"
+  | "trap"
+  | "combat"
+  | "social"
+  | "puzzle"
+  | "boss"
+  | "reward"
+  | "mixed";
+
+export type ElementType =
+  | "trap"
+  | "monster"
+  | "npc"
+  | "item"
+  | "environmental_hazard"
+  | "boss"
+  | "reward"
+  | "clue"
+  | "key_item";
+
+export type RewardType = "item" | "gold" | "xp" | "lore" | "key_item";
+
+export interface NodeElementMechanics {
+  dc?: number;
+  check_type?: string | null;
+  damage?: string | null;
+  hp?: number;
+  ac?: number;
+  cr?: string | null;
+}
+
+export interface NodeElementReward {
+  type: RewardType;
+  name: string;
+  description: string;
+}
+
+export interface NodeElement {
+  type: ElementType;
+  name: string;
+  description: string;
+  mechanics?: NodeElementMechanics;
+  rewards?: NodeElementReward[];
+}
+
+export interface NodeContent {
+  summary: string;
+  scene_type: SceneType;
+  narrative_seed: string;
+  elements: NodeElement[];
+  completion_conditions?: string[];
+  failure_consequences?: string[];
+}
+
 export type MapNode = {
   id: string;
   name: string;
@@ -37,6 +92,7 @@ export type MapNode = {
   isGoal?: boolean;
   x?: number;
   y?: number;
+  content?: NodeContent;
 };
 
 export type MapEdge = {
