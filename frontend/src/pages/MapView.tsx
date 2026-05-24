@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, MapPin, Eye, EyeOff, Compass, Crown } from "lucide-react";
-import { useGame, MapNode } from "../context/GameContext";
+import { useGame, MapNode, getAdjacentNodeIds } from "../context/GameContext";
 
 const NODE_RADIUS = 38;
+const MAP_PADDING = 80;
+const MAP_MIN_WIDTH = 800;
+const MAP_MIN_HEIGHT = 540;
 
 const statusStyles = {
   current: {
@@ -28,16 +31,17 @@ const NodeDetailPanel = ({
   node,
   edges,
   nodes,
+  currentNodeId,
   onClose,
 }: {
   node: MapNode;
   edges: { from: string; to: string; condition?: string }[];
   nodes: MapNode[];
+  currentNodeId: string | null;
   onClose: () => void;
 }) => {
-  const connectedEdges = edges.filter(
-    (e) => e.from === node.id || e.to === node.id
-  );
+  const connectedEdges = edges.filter((e) => e.from === node.id || e.to === node.id);
+  const isCurrent = node.id === currentNodeId;
 
   return (
     <AnimatePresence>
@@ -71,7 +75,7 @@ const NodeDetailPanel = ({
           </p>
         </div>
 
-        {node.status === "current" && (
+        {isCurrent && (
           <div className="bg-primary/10 border border-primary/30 rounded-sm px-3 py-2">
             <p className="font-display text-[10px] text-primary uppercase tracking-widest">
               ◆ You are here
@@ -122,13 +126,17 @@ const NodeDetailPanel = ({
             </ul>
           </div>
         )}
+
+        <p className="font-body text-[11px] text-muted-foreground italic mt-auto border border-gold/20 rounded-sm px-3 py-2">
+          Travel by describing your destination on the Game page.
+        </p>
       </motion.div>
     </AnimatePresence>
   );
 };
 
 const MapView = () => {
-  const { map } = useGame();
+  const { map, character, currentNodeId, progressCompletedNodeIds } = useGame();
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
 
   if (!map) {
@@ -149,12 +157,10 @@ const MapView = () => {
 
   const getNode = (id: string) => map.nodes.find((n) => n.id === id);
 
-  // Fallback: dacă niciun nod nu are isGoal, detectăm nodul final
-  // ca singurul nod fără muchii de ieșire care nu e start
   const hasExplicitGoal = map.nodes.some((n) => n.isGoal);
   const outgoingIds = new Set(map.edges.map((e) => e.from));
   const sinkNodes = map.nodes.filter(
-    (n) => !outgoingIds.has(n.id) && n.status !== "current"
+    (n) => !outgoingIds.has(n.id) && n.status !== "current",
   );
   const inferredGoalId =
     !hasExplicitGoal && sinkNodes.length === 1 ? sinkNodes[0].id : null;
@@ -169,6 +175,19 @@ const MapView = () => {
 
   const discoveredCount = map.nodes.filter((n) => n.status !== "hidden").length;
   const totalCount = map.nodes.length;
+  const currentNode = map.nodes.find((n) => n.status === "current");
+  const adjacentIds = currentNode ? getAdjacentNodeIds(map, currentNode.id) : [];
+  const canTravelFromCurrent =
+    !!currentNode && progressCompletedNodeIds.includes(currentNode.id);
+
+  const mapWidth = Math.max(
+    MAP_MIN_WIDTH,
+    ...map.nodes.map((n) => (n.x ?? 0) + NODE_RADIUS + MAP_PADDING),
+  );
+  const mapHeight = Math.max(
+    MAP_MIN_HEIGHT,
+    ...map.nodes.map((n) => (n.y ?? 0) + NODE_RADIUS + MAP_PADDING),
+  );
 
   return (
     <motion.div
@@ -189,7 +208,6 @@ const MapView = () => {
         </div>
       </div>
 
-      {/* Legend */}
       <div className="flex items-center gap-6 mb-4 px-1 flex-wrap">
         {[
           { color: "bg-primary/20 border-primary shadow-[0_0_10px_hsl(var(--primary)/0.4)]", label: "Current" },
@@ -208,32 +226,34 @@ const MapView = () => {
         ))}
       </div>
 
-      <div className="relative bg-[hsl(var(--card))] border border-gold/40 rounded-sm overflow-hidden">
-        {/* Parchment texture overlay */}
+      {!character && (
+        <div className="narrative-panel border-gold/30 mb-4 text-center py-3">
+          <p className="font-body text-xs text-muted-foreground">
+            Create a character before playing.
+          </p>
+        </div>
+      )}
+
+      <div className="relative bg-[hsl(var(--card))] border border-gold/40 rounded-sm overflow-auto max-h-[min(70vh,620px)]">
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPjxyZWN0IHdpZHRoPSI0IiBoZWlnaHQ9IjQiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMCAyTDQgMiIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9Ii41Ii8+PC9zdmc+')]" />
 
-        <div className="relative" style={{ width: "100%", height: 540 }}>
-          {/* SVG edges */}
+        <div
+          className="relative"
+          style={{ width: mapWidth, height: mapHeight, minWidth: mapWidth, minHeight: mapHeight }}
+        >
           <svg
             className="absolute inset-0"
-            style={{ width: 800, height: 540 }}
-            viewBox="0 0 800 540"
+            width={mapWidth}
+            height={mapHeight}
+            viewBox={`0 0 ${mapWidth} ${mapHeight}`}
           >
-            <defs>
-              <filter id="fog-blur">
-                <feGaussianBlur stdDeviation="2" />
-              </filter>
-            </defs>
-
             {map.edges.map((edge, index) => {
               const na = getNode(edge.from);
               const nb = getNode(edge.to);
               if (!na || !nb) return null;
 
-              const bothHidden =
-                na.status === "hidden" && nb.status === "hidden";
-              const anyHidden =
-                na.status === "hidden" || nb.status === "hidden";
+              const bothHidden = na.status === "hidden" && nb.status === "hidden";
+              const anyHidden = na.status === "hidden" || nb.status === "hidden";
 
               if (bothHidden) return null;
 
@@ -253,13 +273,19 @@ const MapView = () => {
             })}
           </svg>
 
-          {/* Nodes */}
           {map.nodes.map((node, i) => {
             const isGoal = isNodeGoal(node);
             const isHidden = node.status === "hidden";
             const isSelected = selectedNode?.id === node.id;
             const styleKey = isGoal && isHidden ? "goal" : node.status;
             const styles = statusStyles[styleKey as keyof typeof statusStyles];
+
+            const isAdjacent = currentNode ? adjacentIds.includes(node.id) : false;
+            const isTravelTarget =
+              canTravelFromCurrent &&
+              isAdjacent &&
+              node.id !== currentNode?.id &&
+              node.status !== "hidden";
 
             return (
               <motion.div
@@ -274,7 +300,6 @@ const MapView = () => {
                 }}
                 onClick={() => handleNodeClick(node)}
               >
-                {/* Pulse ring for current node */}
                 {node.status === "current" && (
                   <motion.div
                     className="absolute inset-0 rounded-full border-2 border-primary"
@@ -284,7 +309,6 @@ const MapView = () => {
                   />
                 )}
 
-                {/* Slow shimmer ring for goal node */}
                 {isGoal && (
                   <motion.div
                     className="absolute inset-0 rounded-full border-2 border-amber-400/40"
@@ -294,7 +318,6 @@ const MapView = () => {
                   />
                 )}
 
-                {/* Selection ring */}
                 {isSelected && !isHidden && (
                   <div
                     className="absolute inset-0 rounded-full border-2 border-white/60"
@@ -302,7 +325,15 @@ const MapView = () => {
                   />
                 )}
 
-                {/* Node circle */}
+                {isTravelTarget && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full border-2 border-emerald-400/70"
+                    animate={{ scale: [1, 1.15, 1], opacity: [0.7, 0.35, 0.7] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ width: NODE_RADIUS * 2, height: NODE_RADIUS * 2 }}
+                  />
+                )}
+
                 <div
                   className={`rounded-full border-2 flex items-center justify-center transition-all duration-200 ${styles.outer} ${isHidden && !isGoal ? "" : isHidden ? "" : "hover:scale-110"}`}
                   style={{ width: NODE_RADIUS * 2, height: NODE_RADIUS * 2 }}
@@ -310,16 +341,12 @@ const MapView = () => {
                   {isGoal && isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
                       <Crown className="h-4 w-4 text-amber-400/50" />
-                      <span className="font-display text-[8px] text-amber-400/40">
-                        ???
-                      </span>
+                      <span className="font-display text-[8px] text-amber-400/40">???</span>
                     </div>
                   ) : isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
                       <EyeOff className="h-3.5 w-3.5 text-muted-foreground/30" />
-                      <span className="font-display text-[8px] text-muted-foreground/30">
-                        ???
-                      </span>
+                      <span className="font-display text-[8px] text-muted-foreground/30">???</span>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-0.5 px-2">
@@ -333,7 +360,6 @@ const MapView = () => {
                   )}
                 </div>
 
-                {/* Fog overlay for hidden non-goal nodes */}
                 {isHidden && !isGoal && (
                   <div
                     className="absolute inset-0 rounded-full"
@@ -346,7 +372,6 @@ const MapView = () => {
                   />
                 )}
 
-                {/* Goal node label below */}
                 {isGoal && (
                   <span className="mt-1 font-display text-[9px] text-amber-400/60 uppercase tracking-widest">
                     Objective
@@ -356,12 +381,12 @@ const MapView = () => {
             );
           })}
 
-          {/* Detail panel */}
           {selectedNode && (
             <NodeDetailPanel
               node={{ ...selectedNode, isGoal: isNodeGoal(selectedNode) }}
               edges={map.edges}
               nodes={map.nodes}
+              currentNodeId={currentNodeId}
               onClose={() => setSelectedNode(null)}
             />
           )}
@@ -369,7 +394,7 @@ const MapView = () => {
       </div>
 
       <p className="text-[10px] font-body text-muted-foreground/50 text-center mt-3 italic">
-        Click on a discovered location to view details
+        Scroll to explore the realm. Travel by telling the Dungeon Master where you go on the Game page.
       </p>
     </motion.div>
   );

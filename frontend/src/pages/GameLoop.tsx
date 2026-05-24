@@ -1,13 +1,9 @@
+import { useState, FormEvent, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Heart, Shield, Sword, Scroll, Gem, Flame, Hexagon } from "lucide-react";
-
-const narrativeText = `The ancient stone doors groan open, revealing a vast chamber lit by phosphorescent fungi clinging to the cavern ceiling. The air is thick with the scent of damp earth and something else — something old and metallic, like dried blood.
-
-Before you, a narrow bridge of carved stone spans a chasm of unknowable depth. On the far side, you can make out the faint glow of runic inscriptions pulsing with an amber light. The whispers you've been hearing since entering the ruins grow louder here, overlapping into a discordant chorus.
-
-To your left, a collapsed passage is partially cleared — it might lead to a side chamber. To your right, water drips steadily from stalactites into a dark pool. Something moves beneath the surface.
-
-The bridge looks stable, but ancient. What do you do?`;
+import { Heart, Shield, Sword, Scroll, Gem, Flame, Hexagon, Compass, Footprints } from "lucide-react";
+import { Link } from "react-router-dom";
+import { useGame, getAvailableTravelDestinations } from "@/context/GameContext";
+import { NarrationPanel } from "@/components/NarrationPanel";
 
 const inventoryItems = [
   { name: "Elvish Longbow", icon: Sword, desc: "+2 Attack" },
@@ -22,7 +18,103 @@ const statusEffects = [
   { name: "Burning", icon: Flame, color: "text-accent" },
 ];
 
+const outcomeLabels: Record<string, string> = {
+  critical_fail: "Critical Fail!",
+  fail: "Failure",
+  partial: "Partial Success",
+  success: "Success!",
+  critical_success: "Critical Success!",
+};
+
 const GameLoop = () => {
+  const {
+    map,
+    currentNodeId,
+    narrativeHistory,
+    animateMessageId,
+    currentEncounter,
+    isEnteringNode,
+    clearAnimateMessage,
+    character,
+    submitAction,
+    travelToLocation,
+    enterLocation,
+    isSubmittingAction,
+    actionError,
+    lastRoll,
+    progressCompletedNodeIds,
+  } = useGame();
+
+  const [actionInput, setActionInput] = useState("");
+  const autoEnterAttempted = useRef(false);
+
+  const currentNode = map?.nodes.find((n) => n.id === currentNodeId);
+  const travelDestinations =
+    map && currentNodeId
+      ? getAvailableTravelDestinations(map, currentNodeId, progressCompletedNodeIds)
+      : [];
+  const canTravelAway = travelDestinations.length > 0;
+  const isBusy = isEnteringNode || isSubmittingAction || !!animateMessageId;
+
+  useEffect(() => {
+    if (!map || !currentNodeId || !character || isEnteringNode) return;
+    if (narrativeHistory.length > 0 || currentEncounter) return;
+    if (autoEnterAttempted.current) return;
+
+    autoEnterAttempted.current = true;
+    enterLocation(currentNodeId).catch(() => {
+      autoEnterAttempted.current = false;
+    });
+  }, [
+    map,
+    currentNodeId,
+    character,
+    narrativeHistory.length,
+    currentEncounter,
+    isEnteringNode,
+    enterLocation,
+  ]);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!actionInput.trim() || isBusy) return;
+
+    try {
+      await submitAction(actionInput);
+      setActionInput("");
+    } catch {
+      // error shown via actionError
+    }
+  };
+
+  const handleTravel = async (nodeId: string, nodeName: string) => {
+    if (isBusy) return;
+
+    const prompt = `I travel to ${nodeName}`;
+    try {
+      await travelToLocation(nodeId, prompt);
+      setActionInput("");
+    } catch {
+      // error shown via actionError
+    }
+  };
+
+  if (!map || !currentNodeId) {
+    return (
+      <div className="max-w-3xl mx-auto py-12">
+        <div className="narrative-panel text-center">
+          <Compass className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+          <p className="font-body text-muted-foreground mb-4">
+            Start an adventure to begin your journey.
+          </p>
+          <Link to="/adventure" className="btn-fantasy text-sm inline-block">
+            Start Adventure
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -30,58 +122,138 @@ const GameLoop = () => {
       transition={{ duration: 0.5 }}
       className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-6rem)]"
     >
-      {/* Left: Narrative Panel (60%) */}
       <div className="lg:w-[60%] flex flex-col">
-        <div className="narrative-panel flex-1 flex flex-col overflow-hidden">
-          <h2 className="font-display text-lg text-primary tracking-wider mb-4">
-            Chapter III — The Sunken Archive
-          </h2>
-          <div className="flex-1 overflow-y-auto pr-2 mb-4">
-            <p className="font-body text-parchment leading-relaxed whitespace-pre-line text-sm">
-              {narrativeText}
+        <NarrationPanel
+          messages={narrativeHistory}
+          animateMessageId={animateMessageId}
+          onAnimationComplete={clearAnimateMessage}
+          locationName={currentNode?.name}
+          isLoading={isEnteringNode || isSubmittingAction}
+          loadingText={
+            isSubmittingAction
+              ? "The Dungeon Master considers your action..."
+              : "The Dungeon Master is setting the scene..."
+          }
+        />
+
+        {currentEncounter && currentEncounter.suggested_actions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 bg-card/60 border border-gold/30 rounded-sm px-4 py-3"
+          >
+            <p className="font-display text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
+              You might...
             </p>
-          </div>
+            <ul className="flex flex-wrap gap-2">
+              {currentEncounter.suggested_actions.map((action) => (
+                <li key={action}>
+                  <button
+                    type="button"
+                    onClick={() => setActionInput(action)}
+                    disabled={isBusy}
+                    className="text-xs font-body text-foreground/70 bg-muted/30 border border-gold/20 rounded-sm px-2.5 py-1 hover:border-primary/50 hover:text-primary transition-colors disabled:opacity-50"
+                  >
+                    {action}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
 
-          {/* Input */}
-          <div className="border-t border-gold pt-4">
-            <label className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
-              What do you do?
-            </label>
-            <div className="flex gap-3">
-              <input
-                className="flex-1 bg-background/50 border border-gold rounded-sm px-4 py-2.5 text-foreground font-body placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary text-sm"
-                placeholder="I carefully step onto the bridge, testing each stone..."
-                
-              />
-              <button className="btn-fantasy text-xs px-6">Submit</button>
+        {canTravelAway && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 bg-card/60 border border-emerald-500/30 rounded-sm px-4 py-3"
+          >
+            <p className="font-display text-[10px] uppercase tracking-wider text-emerald-400/80 mb-2">
+              Where do you go?
+            </p>
+            <ul className="flex flex-wrap gap-2">
+              {travelDestinations.map((node) => (
+                <li key={node.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleTravel(node.id, node.name)}
+                    disabled={isBusy}
+                    className="text-xs font-body text-foreground/80 bg-emerald-950/30 border border-emerald-500/30 rounded-sm px-2.5 py-1.5 hover:border-emerald-400/60 hover:text-emerald-300 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Footprints className="h-3 w-3" />
+                    Travel to {node.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] text-muted-foreground mt-2 italic">
+              Or type it yourself, e.g. &quot;I head toward {travelDestinations[0]?.name}&quot;
+            </p>
+          </motion.div>
+        )}
+
+        {lastRoll && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 bg-card border border-gold rounded-sm px-6 py-3 flex items-center justify-center gap-4 flex-wrap"
+          >
+            <div className="w-10 h-10 rounded-sm border border-primary bg-primary/10 flex items-center justify-center font-display text-primary text-lg">
+              {lastRoll.d20}
             </div>
-          </div>
-        </div>
+            <div>
+              <span className="font-display text-sm text-primary">
+                Roll: {lastRoll.total}
+              </span>
+              <span className="mx-2 text-muted-foreground">—</span>
+              <span className="font-display text-sm text-primary text-gold-glow">
+                {outcomeLabels[lastRoll.outcome] ?? lastRoll.outcome}
+              </span>
+            </div>
+            <div className="text-xs text-muted-foreground font-body">
+              d20 ({lastRoll.d20}) + {lastRoll.modifier} vs DC {lastRoll.dc}
+            </div>
+          </motion.div>
+        )}
 
-        {/* Dice Roll HUD */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-4 bg-card border border-gold rounded-sm px-6 py-3 flex items-center justify-center gap-4"
-        >
-          <div className="w-10 h-10 rounded-sm border border-primary bg-primary/10 flex items-center justify-center font-display text-primary text-lg">
-            D20
+        <form onSubmit={handleSubmit} className="border-t border-gold pt-4 mt-4">
+          <label className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
+            What do you do?
+          </label>
+          <div className="flex gap-3">
+            <input
+              value={actionInput}
+              onChange={(e) => setActionInput(e.target.value)}
+              disabled={isBusy}
+              className="flex-1 bg-background/50 border border-gold rounded-sm px-4 py-2.5 text-foreground font-body placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary text-sm disabled:opacity-50"
+              placeholder={
+                canTravelAway
+                  ? `I travel to ${travelDestinations[0]?.name ?? "the next location"}...`
+                  : "I carefully step onto the bridge, testing each stone..."
+              }
+            />
+            <button
+              type="submit"
+              disabled={isBusy || !actionInput.trim()}
+              className="btn-fantasy text-xs px-6 disabled:opacity-50"
+            >
+              {isSubmittingAction || isEnteringNode ? "..." : "Submit"}
+            </button>
           </div>
-          <div>
-            <span className="font-display text-sm text-primary">Roll: 17</span>
-            <span className="mx-2 text-muted-foreground">—</span>
-            <span className="font-display text-sm text-primary text-gold-glow">Success!</span>
-          </div>
-          <div className="text-xs text-muted-foreground font-body">
-            Perception Check (DC 15)
-          </div>
-        </motion.div>
+          {actionError && (
+            <p className="text-destructive text-sm mt-2">{actionError}</p>
+          )}
+          <p className="text-[10px] text-muted-foreground mt-2 italic">
+            Consult the{" "}
+            <Link to="/map" className="text-primary hover:underline">
+              realm map
+            </Link>{" "}
+            for discovered locations.
+          </p>
+        </form>
       </div>
 
-      {/* Right: Character Panel (40%) */}
       <div className="lg:w-[40%] space-y-6">
-        {/* HP Bar */}
         <div className="bg-card border border-gold rounded-sm p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="font-display text-xs uppercase tracking-wider text-primary">Hit Points</span>
@@ -103,13 +275,14 @@ const GameLoop = () => {
             <div className="text-xs text-muted-foreground">
               <span className="text-foreground font-display">Level:</span> 5
             </div>
-            <div className="text-xs text-muted-foreground">
-              <span className="text-foreground font-display">XP:</span> 6,500
-            </div>
+            {character && (
+              <div className="text-xs text-muted-foreground truncate">
+                <span className="text-foreground font-display">Hero:</span> {character.name}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Inventory */}
         <div className="bg-card border border-gold rounded-sm p-4">
           <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">Inventory</h3>
           <div className="space-y-2">
@@ -127,7 +300,6 @@ const GameLoop = () => {
           </div>
         </div>
 
-        {/* Status Effects */}
         <div className="bg-card border border-gold rounded-sm p-4">
           <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">Status Effects</h3>
           <div className="flex flex-wrap gap-2">

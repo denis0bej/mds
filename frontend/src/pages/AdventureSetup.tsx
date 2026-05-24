@@ -71,11 +71,11 @@ const AdventureSetup = () => {
         );
       }
 
-      setAdventureData(data.narrativeIntro, data.map);
+      setAdventureData(data.narrativeIntro, data.map, adventureText.trim());
       if (data.session_id && !sessionId) {
         setSessionId(data.session_id);
       }
-      navigate("/map");
+      navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("Failed to fetch")) {
