@@ -71,6 +71,10 @@ const AdventureSetup = () => {
         );
       }
 
+      if (!data.map?.nodes?.length) {
+        throw new Error("The realm could not be mapped. The response was incomplete — please try again.");
+      }
+
       setAdventureData(data.narrativeIntro, data.map, adventureText.trim());
       if (data.session_id && !sessionId) {
         setSessionId(data.session_id);

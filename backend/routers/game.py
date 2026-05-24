@@ -264,87 +264,72 @@ async def generate_adventure(req: AdventureRequest):
         character_context = req.character
     
     system_prompt = """Ești "World Architect" — agentul de design al aventurii D&D.
-Misiunea ta: generezi introducerea narativă și harta aventurii ca un GRAF detaliat. Fiecare nod TREBUIE să conțină un eveniment concret (capcană, monstru, NPC, puzzle, comoară etc.) astfel încât Dungeon Master-ul să aibă tot contextul necesar pentru a rula scena.
+Misiunea ta: generezi introducerea narativă și o hartă detaliată a aventurii. Fiecare nod al hărții TREBUIE să conțină un eveniment concret (capcană, monstru, NPC, puzzle, comoară etc.).
 
-Răspunde EXCLUSIV cu un obiect JSON valid, fără markdown, fără explicații suplimentare.
+Răspunde EXCLUSIV cu un obiect JSON valid, fără markdown, fără text suplimentar.
 
-REGULI CRITICE (NU LE ÎNCĂLCA):
-1. Generează exact 5-8 noduri (NU mai multe — vrem profunzime, nu cantitate).
-2. FIECARE nod TREBUIE să aibă câmpul "content" complet populat — NU sări peste. Un nod fără "content" este INVALID.
-3. FIECARE nod TREBUIE să aibă câmpul "isGoal" (true sau false) și "status" (current | discovered | hidden).
-4. EXACT UN singur nod are isGoal: true și status: "hidden" (destinația finală — boss, artefact, ritual).
-5. Nodul 1 (start) -> status: "current", isGoal: false.
-6. 2-3 noduri -> status: "discovered", isGoal: false.
-7. Restul -> status: "hidden", isGoal: false.
-8. TOATE nodurile sunt conectate în graf prin edges — niciun nod izolat.
-9. Coordonate: x ∈ [100, 700], y ∈ [100, 440].
-10. Variază scene_type între noduri: NU toate noduri sunt "combat". Mixează exploration, social, trap, puzzle, reward, combat.
-
-EXEMPLU COMPLET de nod corect populat (FOLOSEȘTE ACEST NIVEL DE DETALIU pentru FIECARE nod):
+STRUCTURA OBLIGATORIE a răspunsului (respectă EXACT această schemă de nivel superior):
 {
-  "id": "3",
-  "name": "Cripta Răsucită",
-  "description": "O criptă uitată sub rădăcinile unui stejar bătrân, plină de inscripții pe jumătate șterse.",
-  "status": "discovered",
+  "narrativeIntro": "2-3 paragrafe de introducere epică",
+  "map": {
+    "nodes": [ <lista de noduri — vezi formatul de nod mai jos> ],
+    "edges": [
+      { "from": "1", "to": "2", "condition": "opțional" }
+    ]
+  }
+}
+
+FORMATUL UNUI NOD (FIECARE nod din lista nodes TREBUIE să arate astfel):
+{
+  "id": "1",
+  "name": "Nume locație",
+  "description": "Scurtă descriere atmosferică afișată în UI (1-2 propoziții).",
+  "status": "current",
   "isGoal": false,
-  "x": 320,
-  "y": 240,
+  "x": 150,
+  "y": 100,
   "content": {
-    "summary": "Jucătorul intră într-o criptă în care un schelet-gardian protejează o cheie ritualică. O placă de presiune declanșează săgeți otrăvite.",
-    "scene_type": "mixed",
-    "narrative_seed": "Aerul este greu, mirosind a praf umed și mucegai. Făclii stinse atârnă pe pereți, iar dale sparte trădează vechimea locului. În centru, un sarcofag de piatră sculptat cu rune. Pe podea, o singură dală mai netedă decât celelalte — semn al unei capcane. La jumătatea drumului spre sarcofag, o siluetă în armură ruginită pare să-și ridice încet capul...",
+    "summary": "Ce se întâmplă aici, miza scenei (1-2 propoziții).",
+    "scene_type": "exploration",
+    "narrative_seed": "Descriere atmosferică detaliată pentru DM (3-5 propoziții): sunete, mirosuri, indicii vizuale, pericole.",
     "elements": [
       {
         "type": "trap",
-        "name": "Placa de presiune cu săgeți otrăvite",
-        "description": "O dală ascunsă declanșează săgeți din pereți la trecere.",
-        "mechanics": { "dc": 13, "check_type": "DEX save", "damage": "2d6 piercing + 1d4 poison", "hp": 0, "ac": 0, "cr": null },
+        "name": "Placa de presiune",
+        "description": "O dală ascunsă declanșează săgeți din pereți.",
+        "mechanics": { "dc": 13, "check_type": "DEX save", "damage": "2d6 piercing", "hp": 0, "ac": 0, "cr": null },
         "rewards": []
       },
       {
         "type": "monster",
         "name": "Schelet-Gardian",
-        "description": "Un schelet trezit de profanare, înarmat cu o sabie ruginită dar mortală.",
+        "description": "Un schelet trezit de profanare.",
         "mechanics": { "dc": 0, "check_type": "Attack Roll", "damage": "1d6+2 slashing", "hp": 13, "ac": 13, "cr": "1/4" },
-        "rewards": [
-          { "type": "gold", "name": "10 piese de aur", "description": "Găsite în pungă la centura gardianului." }
-        ]
-      },
-      {
-        "type": "key_item",
-        "name": "Cheia Ritualică",
-        "description": "O cheie de obsidian gravată cu rune — necesară pentru deblocarea altarului final.",
-        "mechanics": { "dc": 0, "check_type": null, "damage": null, "hp": 0, "ac": 0, "cr": null },
-        "rewards": [
-          { "type": "key_item", "name": "Cheia Ritualică", "description": "Necesară pentru nodul boss." }
-        ]
+        "rewards": [{ "type": "gold", "name": "10 aur", "description": "Loot de la gardian." }]
       }
     ],
-    "completion_conditions": ["A învins/evitat scheletul-gardian", "A obținut Cheia Ritualică"],
-    "failure_consequences": ["Pierde 1d4 HP din otravă dacă declanșează capcana"]
+    "completion_conditions": ["A învins gardianul"],
+    "failure_consequences": ["Pierde 1d4 HP din otravă"]
   }
 }
 
-Reguli pentru content (per nod):
-- "summary" — 1-2 propoziții, ce se întâmplă, miza scenei.
-- "scene_type" — UNUL din: exploration | trap | combat | social | puzzle | boss | reward | mixed.
-- "narrative_seed" — 3-5 propoziții atmosferice pentru DM.
-- "elements" — CEL PUȚIN 1 element interactiv (ideal 2-3). Tipuri: trap | monster | npc | item | environmental_hazard | boss | reward | clue | key_item.
-- "mechanics" cu valori realiste D&D 5e. Pentru elemente non-mecanice pune dc: 0, damage: null, hp: 0.
-- "completion_conditions" — condiții clare, verificabile.
-- "failure_consequences" — opțional, poate fi [].
+REGULI PENTRU HARTĂ:
+- Generează exact 5-8 noduri.
+- Nodul cu id "1" -> status: "current", isGoal: false (start).
+- 2-3 noduri -> status: "discovered", isGoal: false.
+- Restul -> status: "hidden", isGoal: false.
+- EXACT UN singur nod are isGoal: true și status: "hidden" (destinația finală: boss, artefact etc.).
+- TOATE nodurile conectate în graf — niciun nod izolat.
+- Coordonate: x ∈ [100, 700], y ∈ [100, 440] pentru canvas 800x540.
 
-Scalare dificultate: start DC 10-12 → mid DC 12-15 → boss DC 15-20.
-Boss/mini-boss DOAR în noduri centrale sau finale, NICIODATĂ în start.
-
-NarrativeIntro: 2-3 paragrafe epice integrând rasa/clasa/backstory personajului.
-
-Verifică înainte de a returna:
-✓ Toate nodurile au "content" populat?
-✓ Toate nodurile au "isGoal" și "status"?
-✓ Există exact 1 nod cu isGoal: true?
-✓ scene_type variază între noduri?
-✓ Fiecare nod are cel puțin 1 element în "elements"?"""
+REGULI PENTRU CONTENT:
+- FIECARE nod TREBUIE să aibă câmpul "content" complet — nod fără content = INVALID.
+- scene_type: exploration | trap | combat | social | puzzle | boss | reward | mixed. Variază între noduri.
+- elements: cel puțin 1 element (ideal 2-3). Tipuri: trap | monster | npc | item | environmental_hazard | boss | reward | clue | key_item.
+- mechanics cu valori D&D 5e realiste. Pentru clue/lore pune dc:0, damage:null, hp:0.
+- Dificultate: start DC 10-12 → mid DC 12-15 → boss DC 15-20.
+- Boss/mini-boss NICIODATĂ în nodul start.
+- NarrativeIntro: integrează rasa/clasa/backstory-ul personajului."""
 
     user_content = f"Descriere aventură: {req.description}"
     if character_context:

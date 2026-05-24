@@ -306,7 +306,7 @@ interface GameState {
   lastCheck: GameActionResult["check"] | null;
   isSubmittingAction: boolean;
   actionError: string | null;
-  setAdventureData: (intro: string, mapData: GameMap, description: string) => void;
+  setAdventureData: (intro: string, mapData: GameMap | null, description: string) => void;
   updateMap: (mapData: GameMap) => void;
   clearAdventureData: () => void;
   enterLocation: (nodeId: string, travelPrompt?: string) => Promise<void>;
@@ -374,7 +374,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [character, map, runtimeState]);
 
-  const setAdventureData = (intro: string, mapData: GameMap, description: string) => {
+  const setAdventureData = (intro: string, mapData: GameMap | null, description: string) => {
+    if (!mapData?.nodes) return;
     setNarrativeIntro(intro);
     setMap(mapData);
     setAdventureDescription(description);

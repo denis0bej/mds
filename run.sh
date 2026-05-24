@@ -1,9 +1,16 @@
 #!/bin/bash
 
-# Funcție pentru a opri toate procesele la închiderea scriptului (Ctrl+C)
+# Oprește toate procesele la Ctrl+C
 trap "kill 0" EXIT
 
 echo "🚀 Pornesc D&D Vibe Project..."
+
+# Eliberează portul 8000 dacă e ocupat de un proces vechi
+if lsof -ti :8000 > /dev/null 2>&1; then
+    echo "  ⚠️  Port 8000 ocupat — opresc procesul vechi..."
+    kill $(lsof -ti :8000) 2>/dev/null
+    sleep 1
+fi
 
 # Pornire Backend
 echo "📂 Pregătire Backend (FastAPI)..."
@@ -17,8 +24,11 @@ fi
 source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
 
 echo "  pip install (verificare dependențe)..."
-# Nu mai ascundem erorile complet pentru a vedea progresul dacă durează
-pip install fastapi uvicorn openai python-dotenv httpx --quiet
+pip install fastapi uvicorn openai python-dotenv httpx supabase --quiet
+if [ $? -ne 0 ]; then
+    echo "  ❌ Eroare la instalarea dependențelor Python."
+    exit 1
+fi
 
 echo "  🚀 Pornesc serverul FastAPI pe portul 8000..."
 uvicorn main:app --reload --port 8000 > /tmp/backend.log 2>&1 &
@@ -28,25 +38,25 @@ BACKEND_PID=$!
 echo "📂 Pregătire Frontend (Vite)..."
 cd ../frontend
 
-if [ ! -d "node_modules" ]; then
-    echo "  📦 Instalare dependențe npm (prima dată, poate dura)..."
-    # Folosim --legacy-peer-deps pentru a ignora conflictele de versiune între vite 8 și pachete mai vechi
-    npm install --legacy-peer-deps
-    if [ $? -ne 0 ]; then
-        echo "  ❌ Eroare la instalarea npm. Încearcă să rulezi 'npm install --legacy-peer-deps' manual în folderul frontend."
-        exit 1
-    fi
-else
-    echo "  ✅ node_modules deja instalat."
+# Sincronizează variabilele VITE_ din backend/.env -> frontend/.env (Vite nu citește .env din altă locație)
+if [ -f "../backend/.env" ]; then
+    grep '^VITE_' ../backend/.env > .env 2>/dev/null || true
 fi
 
-echo "  🚀 Pornesc serverul Vite pe portul 5173..."
+echo "  📦 Verificare dependențe npm..."
+npm install --legacy-peer-deps --quiet
+if [ $? -ne 0 ]; then
+    echo "  ❌ Eroare la instalarea npm. Încearcă 'npm install --legacy-peer-deps' manual în frontend/."
+    exit 1
+fi
+
+echo "  🚀 Pornesc serverul Vite pe portul 8080..."
 npm run dev &
 FRONTEND_PID=$!
 
 echo ""
 echo "✅ Ambele servere sunt în curs de pornire."
-echo "🔗 Frontend: http://localhost:5173"
+echo "🔗 Frontend: http://localhost:8080"
 echo "🔗 Backend API: http://localhost:8000"
 echo "Log-uri backend: tail -f /tmp/backend.log"
 echo "Presionează Ctrl+C pentru a opri ambele servere."
