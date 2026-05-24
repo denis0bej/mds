@@ -4,8 +4,7 @@ import { User, Dices, ChevronDown, Check } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useNavigate } from "react-router-dom";
-import { useGame, CharacterStats } from "@/context/GameContext";
+import { useGame, CharacterStats, type CharacterData } from "@/context/GameContext";
 
 const RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"];
 const CLASSES = ["Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"];
@@ -81,15 +80,93 @@ const rollStat = () => {
   return rolls[1] + rolls[2] + rolls[3];
 };
 
+const STAT_LABELS: Record<StatKey, string> = {
+  STR: "Strength",
+  DEX: "Dexterity",
+  CON: "Constitution",
+  INT: "Intelligence",
+  WIS: "Wisdom",
+  CHA: "Charisma",
+};
+
+function CharacterSheet({ character }: { character: CharacterData }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="max-w-5xl mx-auto pb-10"
+    >
+      <h1 className="text-3xl font-display text-primary text-gold-glow mb-2 tracking-wider">
+        Your Hero
+      </h1>
+      <p className="text-muted-foreground font-body text-sm mb-8">
+        Character sheet — view only. Use &quot;New Character&quot; in the sidebar to start over.
+      </p>
+
+      <div className="narrative-panel space-y-8">
+        <div className="flex flex-col lg:flex-row gap-8">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-40 h-40 rounded-full border-2 border-gold bg-card flex items-center justify-center glow-gold">
+              <User className="h-16 w-16 text-primary/50" />
+            </div>
+            <span className="font-display text-xs uppercase tracking-widest text-muted-foreground">
+              Character Avatar
+            </span>
+          </div>
+
+          <div className="flex-1 space-y-4">
+            <div>
+              <p className="font-display text-xs uppercase tracking-wider text-primary mb-1">Name</p>
+              <p className="font-body text-foreground text-lg">{character.name}</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="font-display text-xs uppercase tracking-wider text-primary mb-1">Race</p>
+                <p className="font-body text-foreground">{character.race}</p>
+              </div>
+              <div>
+                <p className="font-display text-xs uppercase tracking-wider text-primary mb-1">Class</p>
+                <p className="font-body text-foreground">{character.characterClass}</p>
+              </div>
+            </div>
+            <div>
+              <p className="font-display text-xs uppercase tracking-wider text-primary mb-1">Backstory</p>
+              <p className="font-body text-foreground/90 leading-relaxed whitespace-pre-line">
+                {character.backstory}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg text-primary tracking-wider mb-4">Ability Scores</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {(Object.keys(character.stats) as StatKey[]).map((statKey) => {
+              const statVal = character.stats[statKey];
+              const mod = Math.floor((statVal - 10) / 2);
+              return (
+                <div key={statKey} className="stat-card flex flex-col items-center justify-center min-h-[100px]">
+                  <div className="font-display text-xs uppercase tracking-widest text-muted-foreground mb-1">
+                    {statKey}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mb-2">{STAT_LABELS[statKey]}</div>
+                  <div className="font-display text-2xl text-primary text-gold-glow">{statVal}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {mod >= 0 ? `+${mod}` : mod}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 const CharacterCreation = () => {
-  const navigate = useNavigate();
   const { setCharacter, setSessionId, character, isLoading } = useGame();
-  
-  useEffect(() => {
-    if (!isLoading && character) {
-      navigate("/adventure");
-    }
-  }, [character, isLoading, navigate]);
 
   const [hasRolledStats, setHasRolledStats] = useState(false);
   const [availableValues, setAvailableValues] = useState<number[]>([]);
@@ -221,7 +298,6 @@ const CharacterCreation = () => {
       
       setSessionId(result.session_id);
       setCharacter(result.character);
-      navigate("/adventure");
     } catch (error) {
       console.error("Error saving character:", error);
       alert("There was an error saving your character. Please try again.");
@@ -230,12 +306,16 @@ const CharacterCreation = () => {
     }
   };
 
-  if (isLoading || character) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="font-display text-xl text-primary animate-pulse">Loading Character...</div>
       </div>
     );
+  }
+
+  if (character) {
+    return <CharacterSheet character={character} />;
   }
 
   return (

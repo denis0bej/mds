@@ -120,6 +120,7 @@ For "complex_action" (roll NOT yet resolved — propose the check only):
   "phase": "roll_requested",
   "check": {
     "type": "ability_check",
+    "dice": "D20",
     "ability": "DEX",
     "skill": "Stealth",
     "dc": 14,

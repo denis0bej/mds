@@ -92,6 +92,7 @@ export type GameActionResult = {
     skill?: string;
     dc: number;
     reason: string;
+    dice?: string;
   };
 };
 
@@ -237,6 +238,7 @@ interface GameState {
   enterNodeError: string | null;
   progressCompletedNodeIds: string[];
   lastRoll: GameActionResult["roll_result"] | null;
+  lastCheck: GameActionResult["check"] | null;
   isSubmittingAction: boolean;
   actionError: string | null;
   setAdventureData: (intro: string, mapData: GameMap, description: string) => void;
@@ -273,6 +275,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     persisted?.progressCompletedNodeIds ?? [],
   );
   const [lastRoll, setLastRoll] = useState<GameActionResult["roll_result"] | null>(null);
+  const [lastCheck, setLastCheck] = useState<GameActionResult["check"] | null>(null);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -298,6 +301,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setCurrentEncounter(null);
     setAnimateMessageId(null);
     setLastRoll(null);
+    setLastCheck(null);
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -314,6 +318,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setCurrentEncounter(null);
     setAnimateMessageId(null);
     setLastRoll(null);
+    setLastCheck(null);
     localStorage.removeItem(ADVENTURE_STORAGE_KEY);
   };
 
@@ -338,7 +343,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setIsEnteringNode(true);
       setEnterNodeError(null);
       setActionError(null);
-      if (isTravel) setLastRoll(null);
+      if (isTravel) {
+        setLastRoll(null);
+        setLastCheck(null);
+      }
 
       const traveledMap = isTravel ? applyTravel(map, nodeId) : map;
       const updatedNode = traveledMap.nodes.find((n) => n.id === nodeId)!;
@@ -466,6 +474,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
         if (result.roll_result) {
           setLastRoll(result.roll_result);
+          setLastCheck(result.check ?? null);
         }
 
         setProgressCompletedNodeIds((prev) => {
@@ -541,6 +550,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         enterNodeError,
         progressCompletedNodeIds,
         lastRoll,
+        lastCheck,
         isSubmittingAction,
         actionError,
         setAdventureData,
