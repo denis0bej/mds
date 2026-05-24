@@ -1,6 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 import type { NarrativeMessage } from "@/components/NarrationPanel";
+import {
+  createInitialRuntimeState,
+  normalizeRuntimeState,
+  runtimeStateToApi,
+  resolveRuntimeStateAfterAction,
+  type GameRuntimeState,
+  type StateChanges,
+} from "@/lib/gameState";
+
+export type { GameRuntimeState, InventoryItem, StatusEffect } from "@/lib/gameState";
 
 export interface CharacterStats {
   STR: number;
@@ -55,6 +65,7 @@ type PersistedAdventure = {
   currentNodeId: string | null;
   narrativeHistory: NarrativeMessage[];
   progressCompletedNodeIds: string[];
+  runtimeState: GameRuntimeState | null;
 };
 
 function loadPersistedAdventure(): PersistedAdventure | null {
@@ -74,11 +85,8 @@ export type GameActionResult = {
   category: "question" | "simple_action" | "complex_action";
   phase?: "roll_requested" | "roll_resolved";
   narrative: string;
-  state_changes?: {
-    hp_delta?: number;
-    flags_set?: Record<string, boolean>;
-    node_complete?: boolean;
-  };
+  state_changes?: StateChanges | null;
+  game_state?: Record<string, unknown>;
   roll_result?: {
     d20: number;
     modifier: number;
@@ -237,6 +245,7 @@ interface GameState {
   isEnteringNode: boolean;
   enterNodeError: string | null;
   progressCompletedNodeIds: string[];
+  runtimeState: GameRuntimeState | null;
   lastRoll: GameActionResult["roll_result"] | null;
   lastCheck: GameActionResult["check"] | null;
   isSubmittingAction: boolean;
@@ -274,6 +283,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [progressCompletedNodeIds, setProgressCompletedNodeIds] = useState<string[]>(
     persisted?.progressCompletedNodeIds ?? [],
   );
+  const [runtimeState, setRuntimeState] = useState<GameRuntimeState | null>(
+    persisted?.runtimeState ?? null,
+  );
   const [lastRoll, setLastRoll] = useState<GameActionResult["roll_result"] | null>(null);
   const [lastCheck, setLastCheck] = useState<GameActionResult["check"] | null>(null);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
@@ -288,8 +300,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       currentNodeId,
       narrativeHistory,
       progressCompletedNodeIds,
+      runtimeState,
     });
-  }, [narrativeIntro, adventureDescription, map, currentNodeId, narrativeHistory, progressCompletedNodeIds]);
+  }, [
+    narrativeIntro,
+    adventureDescription,
+    map,
+    currentNodeId,
+    narrativeHistory,
+    progressCompletedNodeIds,
+    runtimeState,
+  ]);
+
+  useEffect(() => {
+    if (character && map && !runtimeState) {
+      setRuntimeState(createInitialRuntimeState(character));
+    }
+  }, [character, map, runtimeState]);
 
   const setAdventureData = (intro: string, mapData: GameMap, description: string) => {
     setNarrativeIntro(intro);
@@ -298,6 +325,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setCurrentNodeId(mapData.nodes.find((n) => n.status === "current")?.id ?? null);
     setNarrativeHistory([]);
     setProgressCompletedNodeIds([]);
+    setRuntimeState(character ? createInitialRuntimeState(character) : null);
     setCurrentEncounter(null);
     setAnimateMessageId(null);
     setLastRoll(null);
@@ -315,6 +343,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setCurrentNodeId(null);
     setNarrativeHistory([]);
     setProgressCompletedNodeIds([]);
+    setRuntimeState(null);
     setCurrentEncounter(null);
     setAnimateMessageId(null);
     setLastRoll(null);
@@ -379,6 +408,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               visited_node_ids: traveledMap.nodes
                 .filter((n) => n.status !== "hidden")
                 .map((n) => n.id),
+              ...(runtimeState ? runtimeStateToApi(runtimeState) : {}),
             },
           }),
         });
@@ -404,7 +434,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setIsEnteringNode(false);
       }
     },
-    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds],
+    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds, runtimeState],
   );
 
   const travelToLocation = useCallback(
@@ -445,6 +475,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       setNarrativeHistory((prev) => [...prev, playerMessage]);
 
       try {
+        const apiRuntime = runtimeState ?? (character ? createInitialRuntimeState(character) : null);
+
         const result = await apiFetch<GameActionResult>("/game/action", {
           method: "POST",
           body: JSON.stringify({
@@ -460,6 +492,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             game_state: {
               current_node_id: currentNodeId,
               progress_completed_node_ids: progressCompletedNodeIds,
+              ...(apiRuntime ? runtimeStateToApi(apiRuntime) : {}),
             },
           }),
         });
@@ -475,6 +508,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         if (result.roll_result) {
           setLastRoll(result.roll_result);
           setLastCheck(result.check ?? null);
+        }
+
+        if (result.game_state || result.state_changes) {
+          setRuntimeState(
+            resolveRuntimeStateAfterAction(trimmed, apiRuntime ?? createInitialRuntimeState(character), result),
+          );
         }
 
         setProgressCompletedNodeIds((prev) => {
@@ -503,6 +542,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       adventureDescription,
       narrativeHistory,
       progressCompletedNodeIds,
+      runtimeState,
       travelToLocation,
     ],
   );
@@ -549,6 +589,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         isEnteringNode,
         enterNodeError,
         progressCompletedNodeIds,
+        runtimeState,
         lastRoll,
         lastCheck,
         isSubmittingAction,

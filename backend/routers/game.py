@@ -8,7 +8,14 @@ import uuid
 import json
 import httpx
 from dotenv import load_dotenv
-from rules_engine import roll_d20, resolve_outcome, get_ability_modifier
+from rules_engine import (
+    roll_d20,
+    resolve_outcome,
+    get_ability_modifier,
+    create_initial_game_state,
+    apply_state_changes,
+    reconcile_state_changes,
+)
 
 load_dotenv()
 router = APIRouter()
@@ -109,7 +116,12 @@ For "simple_action":
   "narrative": "describe what happens",
   "state_changes": {
     "hp_delta": 0,
+    "inventory_add": [],
+    "inventory_remove": [],
+    "status_effects_add": [],
+    "status_effects_remove": [],
     "flags_set": {},
+    "flags_unset": [],
     "node_complete": false
   }
 }
@@ -136,6 +148,13 @@ Rules:
 - Use complex_action when failure would matter mechanically or narratively.
 - Use question for "what do I see?", "can I...?", "what are my options?"
 - Mark node_complete true in state_changes only when the player clearly finishes the location's main challenge.
+- ALWAYS populate state_changes for simple_action and roll_resolved complex_action when HP, inventory, or effects change.
+- When the player CONSUMES an item (drink potion, use scroll): MUST set inventory_remove with the exact item name from game_state inventory AND hp_delta if it heals or damages.
+- When the player PICKS UP an item: MUST set inventory_add with { "name", "description", "icon" }.
+- When the player DROPS an item: MUST set inventory_remove with the item name.
+- Example — "I drink the healing potion" with Healing Potion in inventory:
+  { "hp_delta": 9, "inventory_remove": ["Healing Potion"], "inventory_add": [], "status_effects_add": [], "status_effects_remove": [] }
+- Use status_effects_add / status_effects_remove for buffs and debuffs (e.g. Burning, Blessed). Debuffs use type "debuff".
 
 When resolving a roll (you will receive roll_result), respond with:
 {
@@ -144,10 +163,63 @@ When resolving a roll (you will receive roll_result), respond with:
   "narrative": "describe outcome based on roll_result",
   "state_changes": {
     "hp_delta": 0,
+    "inventory_add": [],
+    "inventory_remove": [],
+    "status_effects_add": [],
+    "status_effects_remove": [],
     "flags_set": {},
+    "flags_unset": [],
     "node_complete": false
   }
 }"""
+
+
+def _extract_runtime_state(req: GameActionRequest) -> dict:
+    game_state = req.game_state or {}
+    runtime = {
+        "hp": game_state.get("hp"),
+        "max_hp": game_state.get("max_hp"),
+        "ac": game_state.get("ac"),
+        "level": game_state.get("level"),
+        "inventory": game_state.get("inventory"),
+        "status_effects": game_state.get("status_effects"),
+        "flags": game_state.get("flags"),
+    }
+    if runtime["hp"] is None:
+        return create_initial_game_state(req.character)
+    return {
+        "hp": int(runtime["hp"]),
+        "max_hp": int(runtime.get("max_hp") or runtime["hp"]),
+        "ac": int(runtime.get("ac") or 10),
+        "level": int(runtime.get("level") or 1),
+        "inventory": runtime.get("inventory") or [],
+        "status_effects": runtime.get("status_effects") or [],
+        "flags": runtime.get("flags") or {},
+    }
+
+
+def _finalize_action_result(result: dict, runtime_state: dict, player_action: str) -> dict:
+    category = result.get("category")
+    phase = result.get("phase")
+    should_apply = category in ("simple_action", "complex_action") and phase != "roll_requested"
+
+    if should_apply:
+        merged_changes = reconcile_state_changes(
+            player_action,
+            runtime_state,
+            result.get("state_changes"),
+        )
+        updated_state = apply_state_changes(merged_changes, runtime_state)
+        return {
+            **result,
+            "state_changes": merged_changes,
+            "game_state": updated_state,
+        }
+
+    return {
+        **result,
+        "game_state": runtime_state,
+    }
 
 @router.post("/character")
 async def save_character(char: CharacterData):
@@ -334,6 +406,7 @@ Character:
 @router.post("/game/action")
 async def game_action(req: GameActionRequest):
     user_content = _build_action_user_content(req)
+    runtime_state = _extract_runtime_state(req)
 
     try:
         classify_response = client.chat.completions.create(
@@ -375,13 +448,17 @@ async def game_action(req: GameActionRequest):
             except json.JSONDecodeError:
                 raise HTTPException(status_code=500, detail="Invalid DM roll resolution format.")
 
-            return {
-                **resolved,
-                "roll_result": roll_result,
-                "check": check,
-            }
+            return _finalize_action_result(
+                {
+                    **resolved,
+                    "roll_result": roll_result,
+                    "check": check,
+                },
+                runtime_state,
+                req.action,
+            )
 
-        return result
+        return _finalize_action_result(result, runtime_state, req.action)
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
     except HTTPException:
