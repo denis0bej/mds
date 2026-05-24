@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import type { User, Session } from "@supabase/supabase-js";
 
 export type AuthUser = {
@@ -43,6 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setIsLoading(false);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ? toAuthUser(session.user) : null);
@@ -58,11 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
+    if (!supabase) throw new Error("Supabase is not configured.");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(error.message);
   }, []);
 
   const register = useCallback(async (username: string, email: string, password: string) => {
+    if (!supabase) throw new Error("Supabase is not configured.");
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -72,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
+    if (!supabase) throw new Error("Supabase is not configured.");
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -82,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
   }, []);
 

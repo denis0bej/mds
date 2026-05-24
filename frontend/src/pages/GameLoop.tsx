@@ -1,9 +1,21 @@
 import { useState, FormEvent, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { Heart, Shield, Sword, Scroll, Gem, Flame, Hexagon, Compass, Footprints } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Heart,
+  Shield,
+  Sword,
+  Scroll,
+  Gem,
+  Flame,
+  Hexagon,
+  Compass,
+  Footprints,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useGame, getAvailableTravelDestinations } from "@/context/GameContext";
 import { NarrationPanel } from "@/components/NarrationPanel";
+import { DiceRoller, ROLL_DURATION_MS } from "@/components/DiceRoller";
+import { toRollCheck, toRollResult, type RollCheck, type RollResult } from "@/lib/dice";
 
 const inventoryItems = [
   { name: "Elvish Longbow", icon: Sword, desc: "+2 Attack" },
@@ -18,12 +30,10 @@ const statusEffects = [
   { name: "Burning", icon: Flame, color: "text-accent" },
 ];
 
-const outcomeLabels: Record<string, string> = {
-  critical_fail: "Critical Fail!",
-  fail: "Failure",
-  partial: "Partial Success",
-  success: "Success!",
-  critical_success: "Critical Success!",
+type DiceUiState = {
+  check: RollCheck;
+  result: RollResult | null;
+  isRolling: boolean;
 };
 
 const GameLoop = () => {
@@ -42,11 +52,14 @@ const GameLoop = () => {
     isSubmittingAction,
     actionError,
     lastRoll,
+    lastCheck,
     progressCompletedNodeIds,
   } = useGame();
 
   const [actionInput, setActionInput] = useState("");
+  const [diceUi, setDiceUi] = useState<DiceUiState | null>(null);
   const autoEnterAttempted = useRef(false);
+  const rollKeyRef = useRef("");
 
   const currentNode = map?.nodes.find((n) => n.id === currentNodeId);
   const travelDestinations =
@@ -55,6 +68,29 @@ const GameLoop = () => {
       : [];
   const canTravelAway = travelDestinations.length > 0;
   const isBusy = isEnteringNode || isSubmittingAction || !!animateMessageId;
+
+  useEffect(() => {
+    if (!lastRoll || !lastCheck) {
+      setDiceUi(null);
+      return;
+    }
+
+    const check = toRollCheck(lastCheck);
+    if (!check) return;
+
+    const rollKey = `${lastRoll.d20}-${lastRoll.total}-${lastRoll.dc}-${check.dice}`;
+    if (rollKeyRef.current === rollKey) return;
+    rollKeyRef.current = rollKey;
+
+    const result = toRollResult(lastRoll, check);
+    setDiceUi({ check, result, isRolling: true });
+
+    const timer = setTimeout(() => {
+      setDiceUi({ check, result, isRolling: false });
+    }, ROLL_DURATION_MS);
+
+    return () => clearTimeout(timer);
+  }, [lastRoll, lastCheck]);
 
   useEffect(() => {
     if (!map || !currentNodeId || !character || isEnteringNode) return;
@@ -192,30 +228,6 @@ const GameLoop = () => {
           </motion.div>
         )}
 
-        {lastRoll && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 bg-card border border-gold rounded-sm px-6 py-3 flex items-center justify-center gap-4 flex-wrap"
-          >
-            <div className="w-10 h-10 rounded-sm border border-primary bg-primary/10 flex items-center justify-center font-display text-primary text-lg">
-              {lastRoll.d20}
-            </div>
-            <div>
-              <span className="font-display text-sm text-primary">
-                Roll: {lastRoll.total}
-              </span>
-              <span className="mx-2 text-muted-foreground">—</span>
-              <span className="font-display text-sm text-primary text-gold-glow">
-                {outcomeLabels[lastRoll.outcome] ?? lastRoll.outcome}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground font-body">
-              d20 ({lastRoll.d20}) + {lastRoll.modifier} vs DC {lastRoll.dc}
-            </div>
-          </motion.div>
-        )}
-
         <form onSubmit={handleSubmit} className="border-t border-gold pt-4 mt-4">
           <label className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
             What do you do?
@@ -256,7 +268,9 @@ const GameLoop = () => {
       <div className="lg:w-[40%] space-y-6">
         <div className="bg-card border border-gold rounded-sm p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-display text-xs uppercase tracking-wider text-primary">Hit Points</span>
+            <span className="font-display text-xs uppercase tracking-wider text-primary">
+              Hit Points
+            </span>
             <span className="font-display text-sm text-foreground">32 / 45</span>
           </div>
           <div className="w-full h-3 bg-muted rounded-sm overflow-hidden">
@@ -265,7 +279,9 @@ const GameLoop = () => {
               animate={{ width: "71%" }}
               transition={{ duration: 1, delay: 0.3 }}
               className="h-full bg-accent rounded-sm"
-              style={{ background: "linear-gradient(90deg, hsl(0 69% 35%), hsl(0 69% 45%))" }}
+              style={{
+                background: "linear-gradient(90deg, hsl(0 69% 35%), hsl(0 69% 45%))",
+              }}
             />
           </div>
           <div className="flex gap-4 mt-3">
@@ -284,10 +300,15 @@ const GameLoop = () => {
         </div>
 
         <div className="bg-card border border-gold rounded-sm p-4">
-          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">Inventory</h3>
+          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">
+            Inventory
+          </h3>
           <div className="space-y-2">
             {inventoryItems.map((item) => (
-              <div key={item.name} className="flex items-center gap-3 p-2 rounded-sm hover:bg-muted/30 transition-colors">
+              <div
+                key={item.name}
+                className="flex items-center gap-3 p-2 rounded-sm hover:bg-muted/30 transition-colors"
+              >
                 <div className="w-8 h-8 rounded-sm bg-muted/50 border border-gold flex items-center justify-center">
                   <item.icon className="h-4 w-4 text-primary" />
                 </div>
@@ -301,7 +322,9 @@ const GameLoop = () => {
         </div>
 
         <div className="bg-card border border-gold rounded-sm p-4">
-          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">Status Effects</h3>
+          <h3 className="font-display text-xs uppercase tracking-wider text-primary mb-3">
+            Status Effects
+          </h3>
           <div className="flex flex-wrap gap-2">
             {statusEffects.map((effect) => (
               <div
@@ -314,6 +337,16 @@ const GameLoop = () => {
             ))}
           </div>
         </div>
+
+        <AnimatePresence>
+          {diceUi && (
+            <DiceRoller
+              check={diceUi.check}
+              result={diceUi.result}
+              isRolling={diceUi.isRolling}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );
