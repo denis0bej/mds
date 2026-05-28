@@ -426,14 +426,14 @@ const CharacterCreation = () => {
               </div>
               <div className="flex gap-4 justify-center flex-wrap">
                 {availableValues.map((val, idx) => (
-                  <motion.div
+                  <div
                     key={`pool-${idx}-${val}`}
                     draggable
                     onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("text/plain", JSON.stringify({ value: val, source: "pool", index: idx }))}
                     className="w-14 h-14 rounded bg-card border border-gold flex items-center justify-center font-display text-2xl text-primary cursor-grab active:cursor-grabbing hover:bg-gold/10 transition-colors shadow-[0_0_10px_rgba(212,175,55,0.2)]"
                   >
                     {val}
-                  </motion.div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -448,34 +448,40 @@ const CharacterCreation = () => {
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 * i, duration: 0.4 }}
-                  className={`stat-card flex flex-col items-center justify-center transition-all min-h-[100px] ${
-                    statVal === null ? 'border-dashed border-muted-foreground/50 bg-black/10' : ''
-                  }`}
-                  onDragOver={(e: React.DragEvent) => e.preventDefault()}
-                  onDrop={(e: React.DragEvent) => handleDropToStat(e, statKey)}
                 >
-                  <div className="font-display text-xs uppercase tracking-widest text-muted-foreground mb-1">
-                    {statKey}
+                  <div
+                    className={`stat-card flex flex-col items-center justify-center transition-all min-h-[100px] ${
+                      statVal === null ? "border-dashed border-muted-foreground/50 bg-black/10" : ""
+                    }`}
+                    onDragOver={(e: React.DragEvent) => e.preventDefault()}
+                    onDrop={(e: React.DragEvent) => handleDropToStat(e, statKey)}
+                  >
+                    <div className="font-display text-xs uppercase tracking-widest text-muted-foreground mb-1">
+                      {statKey}
+                    </div>
+
+                    {statVal !== null ? (
+                      <div
+                        draggable
+                        onDragStart={(e: React.DragEvent) =>
+                          e.dataTransfer.setData(
+                            "text/plain",
+                            JSON.stringify({ value: statVal, source: "stat", sourceStat: statKey }),
+                          )
+                        }
+                        className="w-full flex-1 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing hover:bg-white/5 rounded"
+                      >
+                        <div className="font-display text-2xl text-primary text-gold-glow">{statVal}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {statVal >= 10 ? `+${Math.floor((statVal - 10) / 2)}` : Math.floor((statVal - 10) / 2)}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center w-full">
+                        <span className="text-muted-foreground/30 text-xs uppercase tracking-wider">Drop</span>
+                      </div>
+                    )}
                   </div>
-                  
-                  {statVal !== null ? (
-                    <div 
-                      draggable
-                      onDragStart={(e: React.DragEvent) => e.dataTransfer.setData("text/plain", JSON.stringify({ value: statVal, source: "stat", sourceStat: statKey }))}
-                      className="w-full flex-1 flex flex-col items-center justify-center cursor-grab active:cursor-grabbing hover:bg-white/5 rounded"
-                    >
-                      <div className="font-display text-2xl text-primary text-gold-glow">
-                        {statVal}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {statVal >= 10 ? `+${Math.floor((statVal - 10) / 2)}` : Math.floor((statVal - 10) / 2)}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center w-full">
-                      <span className="text-muted-foreground/30 text-xs uppercase tracking-wider">Drop</span>
-                    </div>
-                  )}
                 </motion.div>
               );
             })}
