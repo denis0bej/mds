@@ -481,7 +481,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setNarrativeHistory((prev) => [...prev, gmMessage]);
         setAnimateMessageId(messageId);
         if (isTravel) {
-          setProgressCompletedNodeIds((prev) => prev.filter((id) => id !== nodeId));
+          // If we're traveling to a node we've never completed, we don't add it.
+          // But we MUST NOT remove it if it was already completed (backtracking).
+          setProgressCompletedNodeIds((prev) => 
+            prev.includes(nodeId) ? prev : prev.filter((id) => id !== nodeId)
+          );
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to enter location.";
@@ -572,11 +576,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             resolveRuntimeStateAfterAction(trimmed, apiRuntime ?? createInitialRuntimeState(character), result),
           );
         }
-
-        setProgressCompletedNodeIds((prev) => {
-          if (prev.includes(currentNodeId)) return prev;
-          return [...prev, currentNodeId];
-        });
 
         if (result.state_changes?.node_complete) {
           setProgressCompletedNodeIds((prev) =>
