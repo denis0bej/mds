@@ -15,6 +15,11 @@ from rules_engine import (
     apply_state_changes,
     reconcile_state_changes,
 )
+from prompts import (
+    DM_ACTION_SYSTEM_PROMPT,
+    WORLD_ARCHITECT_SYSTEM_PROMPT,
+    ENCOUNTER_PRESENTATION_SYSTEM_PROMPT,
+)
 
 load_dotenv()
 router = APIRouter()
@@ -92,91 +97,17 @@ Character:
         user_content += f"\n\nAdventure concept:\n{req.adventure_description}"
     if req.narrative_intro:
         user_content += f"\n\nAdventure introduction (context only):\n{req.narrative_intro}"
+    
+    completion_conditions = req.node.get("content", {}).get("completion_conditions", [])
+    if completion_conditions:
+        user_content += f"\n\nCompletion Conditions (MUST be met for node_complete: true):\n- " + "\n- ".join(completion_conditions)
+
     history_text = _format_history(req.recent_history)
     if history_text:
         user_content += f"\n\nRecent history:\n{history_text}"
     if req.game_state:
         user_content += f"\n\nGame state:\n{json.dumps(req.game_state, indent=2)}"
     return user_content
-
-
-DM_ACTION_SYSTEM_PROMPT = """You are the Dungeon Master for a single-player D&D 5e adventure.
-
-Classify the player's input into EXACTLY ONE category and respond with valid JSON only.
-
-Categories:
-1. "question" — player asks for clarification; no game state change; no dice roll.
-2. "simple_action" — player does something that succeeds without a roll (D&D 5e trivial actions).
-3. "complex_action" — player attempts something risky/contested; requires a dice roll.
-
-For "question":
-{
-  "category": "question",
-  "narrative": "informative answer in second person"
-}
-
-For "simple_action":
-{
-  "category": "simple_action",
-  "narrative": "describe what happens",
-  "state_changes": {
-    "hp_delta": 0,
-    "inventory_add": [],
-    "inventory_remove": [],
-    "status_effects_add": [],
-    "status_effects_remove": [],
-    "flags_set": {},
-    "flags_unset": [],
-    "node_complete": false
-  }
-}
-
-For "complex_action" (roll NOT yet resolved — propose the check only):
-{
-  "category": "complex_action",
-  "phase": "roll_requested",
-  "check": {
-    "type": "ability_check",
-    "dice": "D20",
-    "ability": "DEX",
-    "skill": "Stealth",
-    "dc": 14,
-    "reason": "short label for UI"
-  },
-  "narrative": "optional brief setup before the roll"
-}
-
-Rules:
-- Write in English, second person, evocative but concise.
-- Respect the current location and recent history.
-- Do NOT invent numeric dice results.
-- Use complex_action when failure would matter mechanically or narratively.
-- Use question for "what do I see?", "can I...?", "what are my options?"
-- Mark node_complete true in state_changes only when the player clearly finishes the location's main challenge.
-- ALWAYS populate state_changes for simple_action and roll_resolved complex_action when HP, inventory, or effects change.
-- When the player CONSUMES an item (drink potion, use scroll): MUST set inventory_remove with the exact item name from game_state inventory AND hp_delta if it heals or damages.
-- When the player PICKS UP an item: MUST set inventory_add with { "name", "description", "icon" }.
-- When the player DROPS an item: MUST set inventory_remove with the item name.
-- Example — "I drink the healing potion" with Healing Potion in inventory:
-  { "hp_delta": 9, "inventory_remove": ["Healing Potion"], "inventory_add": [], "status_effects_add": [], "status_effects_remove": [] }
-- Use status_effects_add / status_effects_remove for buffs and debuffs (e.g. Burning, Blessed). Debuffs use type "debuff".
-
-When resolving a roll (you will receive roll_result), respond with:
-{
-  "category": "complex_action",
-  "phase": "roll_resolved",
-  "narrative": "describe outcome based on roll_result",
-  "state_changes": {
-    "hp_delta": 0,
-    "inventory_add": [],
-    "inventory_remove": [],
-    "status_effects_add": [],
-    "status_effects_remove": [],
-    "flags_set": {},
-    "flags_unset": [],
-    "node_complete": false
-  }
-}"""
 
 
 def _extract_runtime_state(req: GameActionRequest) -> dict:
@@ -203,9 +134,22 @@ def _extract_runtime_state(req: GameActionRequest) -> dict:
     }
 
 
-def _finalize_action_result(result: dict, runtime_state: dict, player_action: str) -> dict:
+def _finalize_action_result(result: dict, runtime_state: dict, player_action: str, node: dict) -> dict:
     category = result.get("category")
     phase = result.get("phase")
+    
+    # Safety Check: question should NEVER complete a node
+    if category == "question" and "state_changes" in result:
+        result["state_changes"]["node_complete"] = False
+    
+    # Safety Check: trivial simple_action in serious nodes
+    # According to D&D 5e rules and our prompt, simple_action is for trivial tasks.
+    # Trivial tasks should not resolve combat, traps, or boss encounters.
+    if category == "simple_action" and result.get("state_changes, {}").get("node_complete"):
+        scene_type = node.get("content", {}).get("scene_type", "")
+        if scene_type in ("combat", "boss", "trap"):
+            result["state_changes"]["node_complete"] = False
+
     should_apply = category in ("simple_action", "complex_action") and phase != "roll_requested"
 
     if should_apply:
@@ -258,74 +202,6 @@ async def generate_adventure(req: AdventureRequest):
     elif req.character:
         character_context = req.character
     
-    system_prompt = """Ești "World Architect" — agentul de design al aventurii D&D.
-Misiunea ta: generezi introducerea narativă și o hartă detaliată a aventurii. Fiecare nod al hărții TREBUIE să conțină un eveniment concret (capcană, monstru, NPC, puzzle, comoară etc.).
-
-Răspunde EXCLUSIV cu un obiect JSON valid, fără markdown, fără text suplimentar.
-
-STRUCTURA OBLIGATORIE a răspunsului (respectă EXACT această schemă de nivel superior):
-{
-  "narrativeIntro": "2-3 paragrafe de introducere epică",
-  "map": {
-    "nodes": [ <lista de noduri — vezi formatul de nod mai jos> ],
-    "edges": [
-      { "from": "1", "to": "2", "condition": "opțional" }
-    ]
-  }
-}
-
-FORMATUL UNUI NOD (FIECARE nod din lista nodes TREBUIE să arate astfel):
-{
-  "id": "1",
-  "name": "Nume locație",
-  "description": "Scurtă descriere atmosferică afișată în UI (1-2 propoziții).",
-  "status": "current",
-  "isGoal": false,
-  "x": 150,
-  "y": 100,
-  "content": {
-    "summary": "Ce se întâmplă aici, miza scenei (1-2 propoziții).",
-    "scene_type": "exploration",
-    "narrative_seed": "Descriere atmosferică detaliată pentru DM (3-5 propoziții): sunete, mirosuri, indicii vizuale, pericole.",
-    "elements": [
-      {
-        "type": "trap",
-        "name": "Placa de presiune",
-        "description": "O dală ascunsă declanșează săgeți din pereți.",
-        "mechanics": { "dc": 13, "check_type": "DEX save", "damage": "2d6 piercing", "hp": 0, "ac": 0, "cr": null },
-        "rewards": []
-      },
-      {
-        "type": "monster",
-        "name": "Schelet-Gardian",
-        "description": "Un schelet trezit de profanare.",
-        "mechanics": { "dc": 0, "check_type": "Attack Roll", "damage": "1d6+2 slashing", "hp": 13, "ac": 13, "cr": "1/4" },
-        "rewards": [{ "type": "gold", "name": "10 aur", "description": "Loot de la gardian." }]
-      }
-    ],
-    "completion_conditions": ["A învins gardianul"],
-    "failure_consequences": ["Pierde 1d4 HP din otravă"]
-  }
-}
-
-REGULI PENTRU HARTĂ:
-- Generează exact 5-8 noduri.
-- Nodul cu id "1" -> status: "current", isGoal: false (start).
-- 2-3 noduri -> status: "discovered", isGoal: false.
-- Restul -> status: "hidden", isGoal: false.
-- EXACT UN singur nod are isGoal: true și status: "hidden" (destinația finală: boss, artefact etc.).
-- TOATE nodurile conectate în graf — niciun nod izolat.
-- Coordonate: x ∈ [100, 700], y ∈ [100, 440] pentru canvas 800x540.
-
-REGULI PENTRU CONTENT:
-- FIECARE nod TREBUIE să aibă câmpul "content" complet — nod fără content = INVALID.
-- scene_type: exploration | trap | combat | social | puzzle | boss | reward | mixed. Variază între noduri.
-- elements: cel puțin 1 element (ideal 2-3). Tipuri: trap | monster | npc | item | environmental_hazard | boss | reward | clue | key_item.
-- mechanics cu valori D&D 5e realiste. Pentru clue/lore pune dc:0, damage:null, hp:0.
-- Dificultate: start DC 10-12 → mid DC 12-15 → boss DC 15-20.
-- Boss/mini-boss NICIODATĂ în nodul start.
-- NarrativeIntro: integrează rasa/clasa/backstory-ul personajului."""
-
     user_content = f"Descriere aventură: {req.description}"
     if character_context:
         user_content += f"\n\nContext personaj: {json.dumps(character_context, ensure_ascii=False)}"
@@ -339,7 +215,7 @@ REGULI PENTRU CONTENT:
         response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
             ],
             response_format={"type": "json_object"},
@@ -441,25 +317,6 @@ async def enter_node(req: EnterNodeRequest):
             f"{msg.role.upper()}: {msg.text}" for msg in req.recent_history[-8:]
         )
 
-    system_prompt = """You are the Dungeon Master for a single-player D&D 5e adventure.
-
-The player has just arrived at a new location. Present the encounter in an immersive, digestible way.
-
-Respond EXCLUSIVELY with valid JSON, no markdown:
-{
-  "type": "encounter_presentation",
-  "narrative": "2-4 paragraphs in second person. Describe what the character sees, hears, and feels. Highlight visible threats, NPCs, or points of interest. End with implicit options — do not decide for the player.",
-  "visible_elements": ["list of things the player can observe or ask about"],
-  "suggested_actions": ["2-4 optional action ideas without limiting player freedom"]
-}
-
-Rules:
-- Be concise but evocative; avoid walls of text.
-- Reflect the current location, adventure context, and character backstory.
-- Do NOT reveal hidden mechanical values (DC, trap stats).
-- Use D&D 5e tone. Write in English.
-- Do NOT repeat the full adventure intro; focus on THIS location."""
-
     user_content = f"""Location:
 {json.dumps(req.node, indent=2)}
 
@@ -479,7 +336,7 @@ Character:
         response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": ENCOUNTER_PRESENTATION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ],
             response_format={"type": "json_object"},
@@ -560,9 +417,10 @@ async def game_action(req: GameActionRequest):
                 },
                 runtime_state,
                 req.action,
+                req.node,
             )
 
-        return _finalize_action_result(result, runtime_state, req.action)
+        return _finalize_action_result(result, runtime_state, req.action, req.node)
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
     except HTTPException:

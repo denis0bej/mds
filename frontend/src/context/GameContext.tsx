@@ -573,11 +573,6 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           );
         }
 
-        setProgressCompletedNodeIds((prev) => {
-          if (prev.includes(currentNodeId)) return prev;
-          return [...prev, currentNodeId];
-        });
-
         if (result.state_changes?.node_complete) {
           setProgressCompletedNodeIds((prev) =>
             prev.includes(currentNodeId) ? prev : [...prev, currentNodeId],
