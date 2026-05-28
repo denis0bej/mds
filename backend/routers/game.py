@@ -145,7 +145,7 @@ def _finalize_action_result(result: dict, runtime_state: dict, player_action: st
     # Safety Check: trivial simple_action in serious nodes
     # According to D&D 5e rules and our prompt, simple_action is for trivial tasks.
     # Trivial tasks should not resolve combat, traps, or boss encounters.
-    if category == "simple_action" and result.get("state_changes, {}").get("node_complete"):
+    if category == "simple_action" and result.get("state_changes", {}).get("node_complete"):
         scene_type = node.get("content", {}).get("scene_type", "")
         if scene_type in ("combat", "boss", "trap"):
             result["state_changes"]["node_complete"] = False
@@ -298,7 +298,11 @@ def _normalize_map(raw_map: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(raw_map, dict):
         return raw_map
     nodes = raw_map.get("nodes") or []
+    edges = raw_map.get("edges") or []
+    
+    # 1. First pass: basic normalization and identify current nodes
     normalized = []
+    current_node_ids = set()
     for node in nodes:
         if not isinstance(node, dict):
             continue
@@ -306,8 +310,27 @@ def _normalize_map(raw_map: Any) -> Optional[Dict[str, Any]]:
         n.setdefault("isGoal", False)
         n.setdefault("status", "hidden")
         n["content"] = _ensure_content(n)
+        if n["status"] == "current":
+            current_node_ids.add(str(n.get("id")))
         normalized.append(n)
-    return {"nodes": normalized, "edges": raw_map.get("edges") or []}
+    
+    # 2. Identify neighbors of current nodes
+    neighbor_ids = set()
+    for edge in edges:
+        f = str(edge.get("from"))
+        t = str(edge.get("to"))
+        if f in current_node_ids:
+            neighbor_ids.add(t)
+        if t in current_node_ids:
+            neighbor_ids.add(f)
+            
+    # 3. Second pass: ensure neighbors are discovered
+    for n in normalized:
+        node_id = str(n.get("id"))
+        if node_id in neighbor_ids and n["status"] == "hidden":
+            n["status"] = "discovered"
+            
+    return {"nodes": normalized, "edges": edges}
 
 @router.post("/game/enter-node")
 async def enter_node(req: EnterNodeRequest):
