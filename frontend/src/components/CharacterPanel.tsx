@@ -62,7 +62,7 @@ export function CharacterPanel({ character, runtimeState }: CharacterPanelProps)
     if (runtimeState) {
       prevHp.current = runtimeState.hp;
     }
-  }, [runtimeState?.hp]);
+  }, [runtimeState]);
 
   if (!runtimeState) {
     return (
