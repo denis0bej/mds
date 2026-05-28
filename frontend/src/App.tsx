@@ -1,6 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/AppLayout";
@@ -13,7 +11,6 @@ import MapView from "./pages/MapView";
 import GameLoop from "./pages/GameLoop";
 import AdventureSummary from "./pages/AdventureSummary";
 import NotFound from "./pages/NotFound";
-import TestAI from "./pages/TestAI";
 import Login from "./pages/Login";
 import CreateAccount from "./pages/CreateAccount";
 import Account from "./pages/Account";
@@ -22,20 +19,16 @@ import { AuthProvider } from "@/context/AuthContext";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { SupabaseConfigError } from "@/components/SupabaseConfigError";
 
-const queryClient = new QueryClient();
-
 const App = () => {
   if (!isSupabaseConfigured) {
     return <SupabaseConfigError />;
   }
 
   return (
-  <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
         <GameProvider>
           <Toaster />
-          <Sonner />
           <BrowserRouter>
             <Routes>
               <Route element={<GuestRoute />}>
@@ -53,7 +46,6 @@ const App = () => {
                   <Route path="/map" element={<MapView />} />
                   <Route path="/game" element={<GameLoop />} />
                   <Route path="/summary" element={<AdventureSummary />} />
-                  <Route path="/test" element={<TestAI />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Route>
@@ -64,9 +56,7 @@ const App = () => {
         </GameProvider>
       </AuthProvider>
     </TooltipProvider>
-  </QueryClientProvider>
   );
 };
 
 export default App;
-

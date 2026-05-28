@@ -14,6 +14,7 @@ export type AuthUser = {
   id: string;
   email: string;
   username: string;
+  created_at: string;
 };
 
 type AuthContextValue = {
@@ -34,6 +35,7 @@ function toAuthUser(user: User): AuthUser {
     id: user.id,
     email: user.email ?? "",
     username: user.user_metadata?.username ?? user.email?.split("@")[0] ?? "Adventurer",
+    created_at: user.created_at ?? new Date().toISOString(),
   };
 }
 
