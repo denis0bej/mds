@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { User, Dices, ChevronDown, Check } from "lucide-react";
+import { User, Dices, ChevronDown, Check, AlertTriangle } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useGame, CharacterStats, type CharacterData } from "@/context/GameContext";
+import { apiFetch } from "@/lib/api";
 
 const RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"];
 const CLASSES = ["Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"];
@@ -171,6 +172,7 @@ const CharacterCreation = () => {
   const [hasRolledStats, setHasRolledStats] = useState(false);
   const [availableValues, setAvailableValues] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   
   const [assignedStats, setAssignedStats] = useState<Record<StatKey, number | null>>({
     STR: null,
@@ -259,17 +261,17 @@ const CharacterCreation = () => {
 
   const onSubmit = async (data: CharacterFormValues) => {
     if (!hasRolledStats) {
-      alert("Please roll your stats first!");
+      setSubmitError("Please roll your stats first.");
       return;
     }
-    
     if (!allStatsAssigned) {
-      alert("Please assign all your rolled stats to ability scores!");
+      setSubmitError("Please assign all your rolled stats to ability scores.");
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+    setSubmitError(null);
+
     const characterData = {
       name: data.name,
       race: data.race,
@@ -277,30 +279,16 @@ const CharacterCreation = () => {
       backstory: data.backstory,
       stats: assignedStats as CharacterStats,
     };
-    
+
     try {
-      const response = await fetch("http://localhost:8000/character", {
+      const result = await apiFetch<{ session_id: string; character: CharacterData }>("/character", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(characterData),
       });
-      
-      console.log("Fetch response:", response); // Log the full response
-
-      if (!response.ok) {
-        console.error("Response not OK:", response.status, response.statusText, await response.text()); // Log status and text for non-OK responses
-        throw new Error("Failed to save character: " + response.statusText);
-      }
-      
-      const result = await response.json();
-      
       setSessionId(result.session_id);
       setCharacter(result.character);
     } catch (error) {
-      console.error("Error saving character:", error);
-      alert("There was an error saving your character. Please try again.");
+      setSubmitError(error instanceof Error ? error.message : "Failed to save character. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -499,6 +487,12 @@ const CharacterCreation = () => {
         </div>
 
         <div className="mt-8 flex justify-end">
+          {submitError && (
+            <div className="flex items-center gap-2 text-destructive text-sm mb-3">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
           <button type="submit" className="btn-fantasy" disabled={!hasRolledStats || !allStatsAssigned || isSubmitting}>
             {isSubmitting ? 'Forging Hero...' : 'Confirm Character'}
           </button>

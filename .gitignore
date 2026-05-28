@@ -3,5 +3,7 @@ backend/.env
 backend/venv/
 node_modules/
 backend/__pycache__/
-backend/data/
+backend/routers/__pycache__/
+backend/data/*.json
 backend/data/app.db
+*.pyc

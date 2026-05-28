@@ -6,7 +6,6 @@ from openai import OpenAI
 import os
 import uuid
 import json
-import httpx
 from dotenv import load_dotenv
 from rules_engine import (
     roll_d20,
@@ -49,10 +48,6 @@ class AdventureRequest(BaseModel):
     description: str
     session_id: Optional[str] = None
     character: Optional[dict] = None
-
-class ActionRequest(BaseModel):
-    action: str
-    state: dict
 
 class HistoryMessage(BaseModel):
     role: str
@@ -236,8 +231,8 @@ async def save_character(char: CharacterData):
     session_id = str(uuid.uuid4())
     file_path = f"data/{session_id}.json"
     with open(file_path, "w") as f:
-        json.dump(char.dict(), f)
-    return {"session_id": session_id, "character": char.dict()}
+        json.dump(char.model_dump(), f)
+    return {"session_id": session_id, "character": char.model_dump()}
 
 @router.get("/character/{session_id}")
 async def get_character(session_id: str):
@@ -574,20 +569,6 @@ async def game_action(req: GameActionRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Action failed", "detail": str(e)})
-
-@router.post("/action")
-async def handle_action(req: ActionRequest):
-    try:
-        response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Ești un Game Master pentru un joc D&D. Răspunzi la acțiunile jucătorului narativ și decizi consecințele."},
-                {"role": "user", "content": f"Starea jucătorului: {req.state}\nAcțiunea: {req.action}"}
-            ]
-        )
-        return {"response": response.choices[0].message.content}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/health")
 async def health():

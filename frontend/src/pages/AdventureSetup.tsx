@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useGame } from "../context/GameContext";
+import { useGame } from "@/context/GameContext";
 
 const LOADING_MESSAGES = [
   "The Dungeon Master is consulting the stars...",
