@@ -10,13 +10,15 @@ Categories:
 For "question":
 {
   "category": "question",
-  "narrative": "informative answer in second person"
+  "narrative": "informative answer in second person",
+  "suggested_actions": ["2-4 fresh action ideas based on the updated scene"]
 }
 
 For "simple_action":
 {
   "category": "simple_action",
   "narrative": "describe what happens",
+  "suggested_actions": ["2-4 fresh action ideas reflecting what just happened"],
   "state_changes": {
     "hp_delta": 0,
     "inventory_add": [],
@@ -41,7 +43,8 @@ For "complex_action" (roll NOT yet resolved — propose the check only):
     "dc": 14,
     "reason": "short label for UI"
   },
-  "narrative": "optional brief setup before the roll"
+  "narrative": "optional brief setup before the roll",
+  "suggested_actions": ["2-4 action ideas for after the roll resolves"]
 }
 
 Rules:
@@ -58,12 +61,14 @@ Rules:
 - When the player PICKS UP an item: MUST set inventory_add with { "name", "description", "icon" }.
 - When the player DROPS an item: MUST set inventory_remove with the item name.
 - Use status_effects_add / status_effects_remove for buffs and debuffs (e.g. Burning, Blessed). Debuffs use type "debuff".
+- ALWAYS include "suggested_actions": 2-4 short, specific next-step ideas updated after EVERY response. Never repeat the same list unless still the only sensible options. Reflect current scene state, inventory, and recent outcome.
 
 When resolving a roll (you will receive roll_result), respond with:
 {
   "category": "complex_action",
   "phase": "roll_resolved",
   "narrative": "describe outcome based on roll_result",
+  "suggested_actions": ["2-4 fresh action ideas based on the roll outcome"],
   "state_changes": {
     "hp_delta": 0,
     "inventory_add": [],
@@ -162,3 +167,27 @@ Rules:
 - Do NOT reveal hidden mechanical values (DC, trap stats).
 - Use D&D 5e tone. Write in English.
 - Do NOT repeat the full adventure intro; focus on THIS location."""
+
+GENERATE_BACKSTORY_PROMPT = """You write concise D&D 5e character backstories for a single-player adventure.
+
+Respond EXCLUSIVELY with valid JSON:
+{
+  "backstory": "2-4 sentences in English. Include a hook, motivation, and one personal detail. Second person or third person is fine."
+}
+
+Rules:
+- Match the character's race and class if provided.
+- Keep it playable and evocative, not overly long (80-200 words).
+- No markdown."""
+
+GENERATE_ADVENTURE_CONCEPT_PROMPT = """You write short D&D 5e adventure concepts for a single-player game.
+
+Respond EXCLUSIVELY with valid JSON:
+{
+  "concept": "2-4 sentences describing setting, central conflict, and goal. English. 40-120 words."
+}
+
+Rules:
+- If character context is provided, tie the quest to their backstory or class.
+- Include a clear objective and atmospheric hook.
+- No markdown."""

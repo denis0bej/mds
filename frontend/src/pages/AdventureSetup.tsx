@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw } from "lucide-react";
+import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "@/context/GameContext";
+import { apiFetch } from "@/lib/api";
 
 const LOADING_MESSAGES = [
   "The Dungeon Master is consulting the stars...",
@@ -28,6 +29,8 @@ const AdventureSetup = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
+  const [generateConceptError, setGenerateConceptError] = useState<string | null>(null);
   const [suggestionIndex] = useState(() => Math.floor(Math.random() * PLACEHOLDER_SUGGESTIONS.length));
 
   useEffect(() => {
@@ -39,6 +42,23 @@ const AdventureSetup = () => {
     }
     return () => clearInterval(interval);
   }, [isLoading]);
+
+  const handleGenerateConcept = async () => {
+    setIsGeneratingConcept(true);
+    setGenerateConceptError(null);
+
+    try {
+      const data = await apiFetch<{ concept: string }>("/adventure/generate-concept", {
+        method: "POST",
+        body: JSON.stringify({ character: character ?? undefined }),
+      });
+      setAdventureText(data.concept);
+    } catch (err) {
+      setGenerateConceptError(err instanceof Error ? err.message : "Could not generate concept.");
+    } finally {
+      setIsGeneratingConcept(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (adventureText.trim().length < 20) return;
@@ -157,17 +177,35 @@ const AdventureSetup = () => {
 
       {/* Adventure textarea */}
       <div className="narrative-panel border-gold mb-6">
-        <label className="font-display text-xs uppercase tracking-wider text-primary mb-3 block">
-          Adventure Concept
-        </label>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <label className="font-display text-xs uppercase tracking-wider text-primary block">
+            Adventure Concept
+          </label>
+          <button
+            type="button"
+            onClick={handleGenerateConcept}
+            disabled={isLoading || isGeneratingConcept}
+            className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+          >
+            {isGeneratingConcept ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Sparkles className="h-3 w-3" />
+            )}
+            Can't think of anything? Generate for me
+          </button>
+        </div>
         <textarea
           className="w-full bg-background/50 border-none rounded-sm px-1 py-1 text-foreground font-body placeholder:text-muted-foreground/50 focus:outline-none min-h-[200px] resize-none text-sm leading-relaxed"
           placeholder={PLACEHOLDER_SUGGESTIONS[suggestionIndex]}
           value={adventureText}
           onChange={(e) => setAdventureText(e.target.value)}
           maxLength={1000}
-          disabled={isLoading}
+          disabled={isLoading || isGeneratingConcept}
         />
+        {generateConceptError && (
+          <p className="text-destructive text-xs mt-2">{generateConceptError}</p>
+        )}
         <div className="flex items-center justify-between mt-2">
           <span className="font-body text-[10px] text-muted-foreground/40 italic">
             {adventureText.trim().length < 20 && adventureText.length > 0

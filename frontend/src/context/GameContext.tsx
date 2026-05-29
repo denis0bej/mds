@@ -9,8 +9,17 @@ import {
   type GameRuntimeState,
   type StateChanges,
 } from "@/lib/gameState";
+import {
+  backfillEventsFromHistory,
+  createSessionEvent,
+  formatStateChangeSummary,
+  loadEventLogVisible,
+  saveEventLogVisible,
+  type SessionEvent,
+} from "@/lib/sessionEvents";
 
 export type { GameRuntimeState, InventoryItem, StatusEffect } from "@/lib/gameState";
+export type { SessionEvent, SessionEventType } from "@/lib/sessionEvents";
 
 export interface CharacterStats {
   STR: number;
@@ -122,6 +131,7 @@ type PersistedAdventure = {
   narrativeHistory: NarrativeMessage[];
   progressCompletedNodeIds: string[];
   runtimeState: GameRuntimeState | null;
+  sessionEvents: SessionEvent[];
 };
 
 function loadPersistedAdventure(): PersistedAdventure | null {
@@ -141,6 +151,7 @@ export type GameActionResult = {
   category: "question" | "simple_action" | "complex_action";
   phase?: "roll_requested" | "roll_resolved";
   narrative: string;
+  suggested_actions?: string[];
   state_changes?: StateChanges | null;
   game_state?: Record<string, unknown>;
   roll_result?: {
@@ -306,6 +317,11 @@ interface GameState {
   lastCheck: GameActionResult["check"] | null;
   isSubmittingAction: boolean;
   actionError: string | null;
+  sessionEvents: SessionEvent[];
+  eventLogVisible: boolean;
+  eventLogMinimized: boolean;
+  setEventLogVisible: (visible: boolean) => void;
+  setEventLogMinimized: (minimized: boolean) => void;
   setAdventureData: (intro: string, mapData: GameMap | null, description: string) => void;
   updateMap: (mapData: GameMap) => void;
   clearAdventureData: () => void;
@@ -347,6 +363,24 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>(() => {
+    if (persisted?.sessionEvents?.length) return persisted.sessionEvents;
+    if (persisted?.narrativeHistory?.length) {
+      return backfillEventsFromHistory(persisted.narrativeHistory);
+    }
+    return [];
+  });
+  const [eventLogVisible, setEventLogVisibleState] = useState(loadEventLogVisible);
+  const [eventLogMinimized, setEventLogMinimized] = useState(false);
+
+  const appendSessionEvent = useCallback((event: SessionEvent) => {
+    setSessionEvents((prev) => [...prev, event]);
+  }, []);
+
+  const setEventLogVisible = useCallback((visible: boolean) => {
+    setEventLogVisibleState(visible);
+    saveEventLogVisible(visible);
+  }, []);
 
   useEffect(() => {
     savePersistedAdventure({
@@ -357,6 +391,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       narrativeHistory,
       progressCompletedNodeIds,
       runtimeState,
+      sessionEvents,
     });
   }, [
     narrativeIntro,
@@ -366,6 +401,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     narrativeHistory,
     progressCompletedNodeIds,
     runtimeState,
+    sessionEvents,
   ]);
 
   useEffect(() => {
@@ -387,6 +423,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAnimateMessageId(null);
     setLastRoll(null);
     setLastCheck(null);
+    setSessionEvents([
+      createSessionEvent("system", "A new adventure begins.", {
+        location: mapData.nodes.find((n) => n.status === "current")?.name,
+      }),
+    ]);
+    setEventLogMinimized(false);
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -405,6 +447,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAnimateMessageId(null);
     setLastRoll(null);
     setLastCheck(null);
+    setSessionEvents([]);
     localStorage.removeItem(ADVENTURE_STORAGE_KEY);
   };
 
@@ -449,6 +492,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         };
         historyForApi = [...narrativeHistory, playerMessage];
         setNarrativeHistory(historyForApi);
+        appendSessionEvent(
+          createSessionEvent(isTravel ? "travel" : "action", travelPrompt.trim(), {
+            location: updatedNode.name,
+          }),
+        );
+      } else if (!isTravel) {
+        appendSessionEvent(
+          createSessionEvent("system", `Entered ${updatedNode.name}.`, {
+            location: updatedNode.name,
+          }),
+        );
+      } else {
+        appendSessionEvent(
+          createSessionEvent("travel", `Traveled to ${updatedNode.name}.`, {
+            location: updatedNode.name,
+          }),
+        );
       }
 
       try {
@@ -480,6 +540,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setCurrentEncounter(encounter);
         setNarrativeHistory((prev) => [...prev, gmMessage]);
         setAnimateMessageId(messageId);
+        appendSessionEvent(
+          createSessionEvent("narrative", encounter.narrative, {
+            id: messageId,
+            location: updatedNode.name,
+          }),
+        );
         if (isTravel) {
           // If we're traveling to a node we've never completed, we don't add it.
           // But we MUST NOT remove it if it was already completed (backtracking).
@@ -495,7 +561,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setIsEnteringNode(false);
       }
     },
-    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds, runtimeState],
+    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds, runtimeState, appendSessionEvent],
   );
 
   const travelToLocation = useCallback(
@@ -534,6 +600,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         text: trimmed,
       };
       setNarrativeHistory((prev) => [...prev, playerMessage]);
+      appendSessionEvent(
+        createSessionEvent("action", trimmed, {
+          id: playerMessage.id,
+          location: currentNode.name,
+        }),
+      );
 
       try {
         const apiRuntime = runtimeState ?? (character ? createInitialRuntimeState(character) : null);
@@ -565,10 +637,31 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         };
         setNarrativeHistory((prev) => [...prev, gmMessage]);
         setAnimateMessageId(gmMessage.id);
+        appendSessionEvent(
+          createSessionEvent("narrative", result.narrative, {
+            id: gmMessage.id,
+            location: currentNode.name,
+          }),
+        );
 
         if (result.roll_result) {
           setLastRoll(result.roll_result);
           setLastCheck(result.check ?? null);
+          appendSessionEvent(
+            createSessionEvent(
+              "roll",
+              `Rolled ${result.roll_result.total} (d20: ${result.roll_result.d20} + ${result.roll_result.modifier}) vs DC ${result.roll_result.dc} — ${result.roll_result.outcome.replace(/_/g, " ")}`,
+              {
+                location: currentNode.name,
+                meta: {
+                  d20: result.roll_result.d20,
+                  total: result.roll_result.total,
+                  dc: result.roll_result.dc,
+                  outcome: result.roll_result.outcome,
+                },
+              },
+            ),
+          );
         }
 
         if (result.game_state || result.state_changes) {
@@ -577,10 +670,30 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           );
         }
 
+        const stateSummary = result.state_changes
+          ? formatStateChangeSummary(result.state_changes)
+          : null;
+        if (stateSummary) {
+          appendSessionEvent(
+            createSessionEvent("state", stateSummary, {
+              location: currentNode.name,
+              meta: { hpDelta: result.state_changes?.hp_delta },
+            }),
+          );
+        }
+
         if (result.state_changes?.node_complete) {
           setProgressCompletedNodeIds((prev) =>
             prev.includes(currentNodeId) ? prev : [...prev, currentNodeId],
           );
+        }
+
+        if (result.suggested_actions?.length) {
+          setCurrentEncounter((prev) => ({
+            narrative: result.narrative,
+            visible_elements: prev?.visible_elements ?? [],
+            suggested_actions: result.suggested_actions!,
+          }));
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Action failed.";
@@ -600,6 +713,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       progressCompletedNodeIds,
       runtimeState,
       travelToLocation,
+      appendSessionEvent,
     ],
   );
 
@@ -650,6 +764,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         lastCheck,
         isSubmittingAction,
         actionError,
+        sessionEvents,
+        eventLogVisible,
+        eventLogMinimized,
+        setEventLogVisible,
+        setEventLogMinimized,
         setAdventureData,
         updateMap,
         clearAdventureData,

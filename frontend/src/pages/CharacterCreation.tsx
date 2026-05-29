@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { User, Dices, ChevronDown, Check, AlertTriangle } from "lucide-react";
+import { User, Dices, ChevronDown, Check, AlertTriangle, Sparkles, Loader2 } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -173,6 +173,8 @@ const CharacterCreation = () => {
   const [availableValues, setAvailableValues] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isGeneratingBackstory, setIsGeneratingBackstory] = useState(false);
+  const [generateBackstoryError, setGenerateBackstoryError] = useState<string | null>(null);
   
   const [assignedStats, setAssignedStats] = useState<Record<StatKey, number | null>>({
     STR: null,
@@ -202,6 +204,28 @@ const CharacterCreation = () => {
     
     setAvailableValues(newRolls);
     setHasRolledStats(true);
+  };
+
+  const handleGenerateBackstory = async () => {
+    setIsGeneratingBackstory(true);
+    setGenerateBackstoryError(null);
+    const { name, race, characterClass } = form.getValues();
+
+    try {
+      const data = await apiFetch<{ backstory: string }>("/character/generate-backstory", {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim() || undefined,
+          race: race.trim() || undefined,
+          characterClass: characterClass.trim() || undefined,
+        }),
+      });
+      form.setValue("backstory", data.backstory, { shouldValidate: true, shouldDirty: true });
+    } catch (err) {
+      setGenerateBackstoryError(err instanceof Error ? err.message : "Could not generate backstory.");
+    } finally {
+      setIsGeneratingBackstory(false);
+    }
   };
 
   const handleDropToStat = (e: React.DragEvent, targetStat: StatKey) => {
@@ -383,12 +407,31 @@ const CharacterCreation = () => {
             </div>
 
             <div>
-              <label className="font-display text-xs uppercase tracking-wider text-primary mb-2 block">Backstory</label>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <label className="font-display text-xs uppercase tracking-wider text-primary block">Backstory</label>
+                <button
+                  type="button"
+                  onClick={handleGenerateBackstory}
+                  disabled={isGeneratingBackstory}
+                  className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                >
+                  {isGeneratingBackstory ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  Can't think of anything? Generate for me
+                </button>
+              </div>
               <textarea
                 {...form.register("backstory")}
                 className="w-full bg-input border border-gold rounded-sm px-4 py-3 text-foreground font-body placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[120px] resize-none"
                 placeholder="Born in the twilight forests..."
+                disabled={isGeneratingBackstory}
               />
+              {generateBackstoryError && (
+                <p className="text-destructive text-xs mt-1">{generateBackstoryError}</p>
+              )}
               {form.formState.errors.backstory && (
                 <p className="text-destructive text-xs mt-1">{form.formState.errors.backstory.message}</p>
               )}
