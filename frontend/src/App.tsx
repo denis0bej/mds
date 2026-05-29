@@ -19,43 +19,47 @@ import { AuthProvider } from "@/context/AuthContext";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { SupabaseConfigError } from "@/components/SupabaseConfigError";
 
+import { UIPreferencesProvider } from "@/context/UIPreferencesContext";
+
 const App = () => {
   if (!isSupabaseConfigured) {
     return <SupabaseConfigError />;
   }
 
   return (
-    <TooltipProvider>
-      <AuthProvider>
-        <GameProvider>
-          <Toaster />
-          <BrowserRouter>
-            <Routes>
-              <Route element={<GuestRoute />}>
-                <Route element={<AuthLayout />}>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/create-account" element={<CreateAccount />} />
+    <UIPreferencesProvider>
+      <TooltipProvider>
+        <AuthProvider>
+          <GameProvider>
+            <Toaster />
+            <BrowserRouter>
+              <Routes>
+                <Route element={<GuestRoute />}>
+                  <Route element={<AuthLayout />}>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/create-account" element={<CreateAccount />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              <Route element={<ProtectedRoute />}>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<CharacterCreation />} />
-                  <Route path="/account" element={<Account />} />
-                  <Route path="/adventure" element={<AdventureSetup />} />
-                  <Route path="/map" element={<MapView />} />
-                  <Route path="/game" element={<GameLoop />} />
-                  <Route path="/summary" element={<AdventureSummary />} />
-                  <Route path="*" element={<NotFound />} />
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppLayout />}>
+                    <Route path="/" element={<CharacterCreation />} />
+                    <Route path="/account" element={<Account />} />
+                    <Route path="/adventure" element={<AdventureSetup />} />
+                    <Route path="/map" element={<MapView />} />
+                    <Route path="/game" element={<GameLoop />} />
+                    <Route path="/summary" element={<AdventureSummary />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-          </BrowserRouter>
-        </GameProvider>
-      </AuthProvider>
-    </TooltipProvider>
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </BrowserRouter>
+          </GameProvider>
+        </AuthProvider>
+      </TooltipProvider>
+    </UIPreferencesProvider>
   );
 };
 

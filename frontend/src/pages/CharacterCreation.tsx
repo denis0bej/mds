@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useGame, CharacterStats, type CharacterData } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 const RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"];
 const CLASSES = ["Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"];
@@ -167,6 +168,7 @@ function CharacterSheet({ character }: { character: CharacterData }) {
 }
 
 const CharacterCreation = () => {
+  const navigate = useNavigate();
   const { setCharacter, setSessionId, character, isLoading } = useGame();
 
   const [hasRolledStats, setHasRolledStats] = useState(false);
@@ -311,6 +313,8 @@ const CharacterCreation = () => {
       });
       setSessionId(result.session_id);
       setCharacter(result.character);
+      // Redirect to adventure setup after successful creation
+      navigate("/adventure");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to save character. Please try again.");
     } finally {

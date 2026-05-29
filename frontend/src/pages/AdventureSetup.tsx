@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useGame } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
 
@@ -71,25 +71,15 @@ const AdventureSetup = () => {
     if (character) body.character = character;
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/adventure/generate`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }
-      );
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (res.status === 504) {
-          throw new Error("The Dungeon Master has fallen asleep. The response took too long — please try again.");
-        }
-        throw new Error(
-          data.detail?.error || data.detail || "Something went wrong in the magical realms. Please try again."
-        );
-      }
+      const data = await apiFetch<{
+        narrativeIntro: string;
+        map: any;
+        mainMission: any;
+        session_id?: string;
+      }>("/adventure/generate", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
 
       if (!data.map?.nodes?.length) {
         throw new Error("The realm could not be mapped. The response was incomplete — please try again.");
@@ -102,11 +92,7 @@ const AdventureSetup = () => {
       navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("Failed to fetch")) {
-        setError("Forces of darkness have blocked the transmission. Check your connection and try again.");
-      } else {
-        setError(message);
-      }
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -120,9 +106,9 @@ const AdventureSetup = () => {
           <p className="font-body text-muted-foreground mb-4">
             You must forge a hero before the adventure can begin.
           </p>
-          <a href="/" className="btn-fantasy text-sm inline-block">
+          <Link to="/" className="btn-fantasy text-sm inline-block">
             Create Character
-          </a>
+          </Link>
         </div>
       </div>
     );

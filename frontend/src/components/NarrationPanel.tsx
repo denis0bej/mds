@@ -29,6 +29,8 @@ const roleLabels: Record<NarrativeMessage["role"], string | null> = {
   system: null,
 };
 
+import { useUIPreferences } from "@/context/UIPreferencesContext";
+
 function TypewriterText({
   text,
   animate,
@@ -40,6 +42,7 @@ function TypewriterText({
   onComplete?: () => void;
   onSkip?: () => void;
 }) {
+  const { speedMs } = useUIPreferences();
   const [displayed, setDisplayed] = useState(animate ? "" : text);
   const [isAnimating, setIsAnimating] = useState(animate);
   const indexRef = useRef(0);
@@ -74,14 +77,14 @@ function TypewriterText({
         window.clearInterval(interval);
         finish();
       }
-    }, 18);
+    }, speedMs);
 
     return () => window.clearInterval(interval);
-  }, [text, animate, finish]);
+  }, [text, animate, finish, speedMs]);
 
   return (
     <div className="relative">
-      <p className="font-body text-parchment leading-relaxed whitespace-pre-line text-sm">
+      <p className="font-body text-foreground leading-relaxed whitespace-pre-line text-sm">
         {displayed}
         {isAnimating && (
           <span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle" />

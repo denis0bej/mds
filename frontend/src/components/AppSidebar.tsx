@@ -2,6 +2,7 @@ import { Shield, Compass, Map, BookOpen, Trophy, RotateCcw } from "lucide-react"
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "@/context/GameContext";
+import { SettingsModal } from "@/components/SettingsModal";
 import {
   Sidebar,
   SidebarContent,
@@ -77,8 +78,12 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Reset button at the bottom */}
-        <div className={`mt-auto px-2 pb-4 ${collapsed ? "flex justify-center" : ""}`}>
+        {/* Footer actions at the bottom */}
+        <div className="mt-auto px-2 pb-4 space-y-2">
+          <div className={`${collapsed ? "flex justify-center" : ""}`}>
+            <SettingsModal />
+          </div>
+          
           <button
             onClick={handleReset}
             className={`flex items-center gap-3 px-3 py-2.5 rounded-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-200 w-full ${collapsed ? "justify-center" : ""}`}

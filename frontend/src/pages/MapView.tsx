@@ -8,6 +8,8 @@ const MAP_PADDING = 80;
 const MAP_MIN_WIDTH = 800;
 const MAP_MIN_HEIGHT = 540;
 
+import { useUIPreferences } from "../context/UIPreferencesContext";
+
 const statusStyles = {
   current: {
     outer: "border-primary bg-primary/20 shadow-[0_0_24px_4px_hsl(var(--primary)/0.5)]",
@@ -22,8 +24,8 @@ const statusStyles = {
     text: "text-muted-foreground/40",
   },
   goal: {
-    outer: "border-amber-400/60 bg-amber-950/40 cursor-not-allowed shadow-[0_0_16px_2px_rgba(251,191,36,0.15)]",
-    text: "text-amber-400/50",
+    outer: "border-amber-500/60 bg-amber-500/10 cursor-not-allowed shadow-[0_0_16px_2px_rgba(251,191,36,0.15)]",
+    text: "text-amber-600 dark:text-amber-400 font-medium",
   },
 };
 
@@ -320,7 +322,7 @@ const MapView = () => {
 
                 {isSelected && !isHidden && (
                   <div
-                    className="absolute inset-0 rounded-full border-2 border-white/60"
+                    className="absolute inset-0 rounded-full border-2 border-primary shadow-[0_0_10px_white] dark:shadow-none"
                     style={{ width: NODE_RADIUS * 2, height: NODE_RADIUS * 2 }}
                   />
                 )}
@@ -340,8 +342,8 @@ const MapView = () => {
                 >
                   {isGoal && isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
-                      <Crown className="h-4 w-4 text-amber-400/50" />
-                      <span className="font-display text-[8px] text-amber-400/40">???</span>
+                      <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400/50" />
+                      <span className="font-display text-[8px] text-amber-700 dark:text-amber-400/40">???</span>
                     </div>
                   ) : isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
@@ -350,7 +352,7 @@ const MapView = () => {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-0.5 px-2">
-                      {isGoal && <Crown className="h-3 w-3 text-amber-400 mb-0.5" />}
+                      {isGoal && <Crown className="h-3 w-3 text-amber-600 dark:text-amber-400 mb-0.5" />}
                       <span
                         className={`font-display text-[9px] text-center leading-tight break-words overflow-hidden max-h-[55px] ${styles.text}`}
                       >
@@ -373,7 +375,7 @@ const MapView = () => {
                 )}
 
                 {isGoal && (
-                  <span className="mt-1 font-display text-[9px] text-amber-400/60 uppercase tracking-widest">
+                  <span className="mt-1 font-sans text-[10px] text-amber-800 dark:text-amber-400 uppercase tracking-wider font-bold">
                     Objective
                   </span>
                 )}

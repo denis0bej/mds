@@ -985,8 +985,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (sessionId) {
       localStorage.setItem("dnd_session_id", sessionId);
-      fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/character/${sessionId}`)
-        .then((res) => res.json())
+      apiFetch<{ character: CharacterData }>(`/character/${sessionId}`)
         .then((data) => {
           if (data.character) {
             setCharacter(data.character);
@@ -998,6 +997,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         })
         .catch((err) => {
           console.error("Error fetching session:", err);
+          // Don't necessarily clear character on network error, only on 404/invalid data
         })
         .finally(() => setIsLoading(false));
     } else {
