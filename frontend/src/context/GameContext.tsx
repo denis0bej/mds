@@ -169,8 +169,6 @@ export type EncounterData = {
   completion_reason?: AdventureEndReason;
 };
 
-};
-
 export type AdventureSummaryData = {
   title: string;
   narrative: string;

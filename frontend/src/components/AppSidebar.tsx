@@ -1,4 +1,4 @@
-import { Shield, Compass, Map, BookOpen, Trophy, RotateCcw, Users } from "lucide-react";
+import { Shield, Compass, Map, BookOpen, Trophy, Users } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -86,7 +86,7 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <div className={`mt-auto px-2 pb-4 space-y-1 ${collapsed ? "flex flex-col items-center" : ""}`}>
+          <div className={`mt-auto px-2 pb-4 ${collapsed ? "flex justify-center" : ""}`}>
             <button
               onClick={() => setPickerOpen(true)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-sm text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-200 w-full ${collapsed ? "justify-center" : ""}`}
@@ -96,18 +96,6 @@ export function AppSidebar() {
               {!collapsed && (
                 <span className="font-display text-xs uppercase tracking-wider">
                   Switch Character
-                </span>
-              )}
-            </button>
-            <button
-              onClick={handleNewCharacter}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-200 w-full ${collapsed ? "justify-center" : ""}`}
-              title="New Character"
-            >
-              <RotateCcw className="h-4 w-4 flex-shrink-0" />
-              {!collapsed && (
-                <span className="font-display text-xs uppercase tracking-wider">
-                  New Character
                 </span>
               )}
             </button>
@@ -128,6 +116,7 @@ export function AppSidebar() {
           navigate("/");
         }}
         onDelete={deleteCharacterSave}
+        onNewCharacter={handleNewCharacter}
       />
     </>
   );

@@ -105,7 +105,7 @@ function CharacterSheet({ character }: { character: CharacterData }) {
         Your Hero
       </h1>
       <p className="text-muted-foreground font-body text-sm mb-8">
-        Character sheet — view only. Use &quot;New Character&quot; in the sidebar to start over.
+        Character sheet — view only. Open Switch Character to forge a new hero.
       </p>
 
       <div className="narrative-panel space-y-8">
