@@ -338,6 +338,8 @@ async def generate_adventure(req: AdventureRequest):
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
                 character_context = json.load(f)
+        elif req.character:
+            character_context = req.character
         else:
             raise HTTPException(status_code=404, detail="Session not found")
     elif req.character:

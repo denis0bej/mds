@@ -53,7 +53,6 @@ export function EventLog({
         "border border-gold/30 rounded-sm bg-card/80 overflow-hidden flex flex-col shrink-0 w-full",
         className,
       )}
-      style={{ maxHeight: minimized ? undefined : "220px" }}
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-gold/20 bg-card/90 shrink-0">
         <div className="flex items-center gap-2">
@@ -91,8 +90,7 @@ export function EventLog({
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
             ref={scrollRef}
-            className="overflow-y-auto px-2 py-2 space-y-1.5 flex-1 min-h-0"
-            style={{ maxHeight: "180px" }}
+            className="overflow-y-auto px-2 py-2 space-y-1.5 max-h-52"
           >
             {events.length === 0 ? (
               <p className="text-xs text-muted-foreground italic text-center py-4 font-body">

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { useGame } from "@/context/GameContext";
+import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2, BookOpen, Map as MapIcon } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useGame, type MainMission } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
 
 const LOADING_MESSAGES = [
@@ -22,9 +22,106 @@ const PLACEHOLDER_SUGGESTIONS = [
   "A dragon's mountain stronghold where a stolen artifact must be reclaimed before the winter solstice...",
 ];
 
+function missionLabel(mission: MainMission | null): string | null {
+  if (!mission) return null;
+  return mission.title;
+}
+
+function AdventureConceptSheet({
+  concept,
+  intro,
+  mission,
+  locationCount,
+  adventureComplete,
+}: {
+  concept: string;
+  intro: string | null;
+  mission: MainMission | null;
+  locationCount: number;
+  adventureComplete: boolean;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="max-w-3xl mx-auto"
+    >
+      <h1 className="text-3xl font-display text-primary text-gold-glow mb-2 tracking-wider">
+        Your Quest
+      </h1>
+      <p className="text-muted-foreground font-body mb-6 text-sm italic">
+        This adventure has already been forged. Continue where you left off.
+      </p>
+
+      <div className="narrative-panel border-gold mb-6 space-y-4">
+        <div>
+          <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+            Adventure Concept
+          </p>
+          <p className="font-body text-foreground/90 leading-relaxed whitespace-pre-line">{concept}</p>
+        </div>
+
+        {mission && (
+          <div>
+            <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+              Main Mission
+            </p>
+            <p className="font-body text-foreground/90">{missionLabel(mission)}</p>
+          </div>
+        )}
+
+        {intro && (
+          <div>
+            <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+              Opening
+            </p>
+            <p className="font-body text-foreground/80 text-sm leading-relaxed whitespace-pre-line line-clamp-6">
+              {intro}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 pt-2 border-t border-gold/20">
+          <span className="font-body text-xs text-muted-foreground">
+            {locationCount} locations mapped
+          </span>
+          {adventureComplete && (
+            <span className="font-display text-[10px] uppercase tracking-wider text-primary">
+              Completed
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Link to="/game" className="btn-fantasy flex items-center gap-2 text-sm">
+          <BookOpen className="h-4 w-4" />
+          Continue Adventure
+        </Link>
+        <Link
+          to="/map"
+          className="flex items-center gap-2 px-4 py-2 rounded-sm border border-gold/50 font-display text-xs uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
+        >
+          <MapIcon className="h-4 w-4" />
+          View Map
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
 const AdventureSetup = () => {
   const navigate = useNavigate();
-  const { character, sessionId, setSessionId, setAdventureData } = useGame();
+  const {
+    character,
+    setAdventureData,
+    map,
+    adventureDescription,
+    narrativeIntro,
+    mainMission,
+    adventureComplete,
+  } = useGame();
   const [adventureText, setAdventureText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
@@ -32,6 +129,12 @@ const AdventureSetup = () => {
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [generateConceptError, setGenerateConceptError] = useState<string | null>(null);
   const [suggestionIndex] = useState(() => Math.floor(Math.random() * PLACEHOLDER_SUGGESTIONS.length));
+
+  useEffect(() => {
+    if (adventureDescription && !map) {
+      setAdventureText(adventureDescription);
+    }
+  }, [adventureDescription, map]);
 
   useEffect(() => {
     let interval: number | undefined;
@@ -67,7 +170,6 @@ const AdventureSetup = () => {
     setError(null);
 
     const body: Record<string, unknown> = { description: adventureText.trim() };
-    if (sessionId) body.session_id = sessionId;
     if (character) body.character = character;
 
     try {
@@ -96,9 +198,6 @@ const AdventureSetup = () => {
       }
 
       setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
-      if (data.session_id && !sessionId) {
-        setSessionId(data.session_id);
-      }
       navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -112,7 +211,7 @@ const AdventureSetup = () => {
     }
   };
 
-  if (!character && !sessionId) {
+  if (!character) {
     return (
       <div className="max-w-3xl mx-auto py-12">
         <div className="narrative-panel text-center">
@@ -125,6 +224,18 @@ const AdventureSetup = () => {
           </a>
         </div>
       </div>
+    );
+  }
+
+  if (map && adventureDescription) {
+    return (
+      <AdventureConceptSheet
+        concept={adventureDescription}
+        intro={narrativeIntro}
+        mission={mainMission}
+        locationCount={map.nodes.length}
+        adventureComplete={adventureComplete}
+      />
     );
   }
 

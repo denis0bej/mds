@@ -155,9 +155,9 @@ const GameLoop = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-6rem)]"
+      className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-6rem)]"
     >
-      <div className="lg:w-[60%] flex flex-col">
+      <div className="lg:w-[60%] flex flex-col lg:min-h-0 lg:overflow-y-auto">
         {mainMission && !adventureComplete && (
           <div className="mb-4 bg-card/60 border border-gold/30 rounded-sm px-4 py-3">
             <p className="font-display text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
@@ -301,14 +301,16 @@ const GameLoop = () => {
 
       </div>
 
-      <div className="lg:w-[40%] flex flex-col min-h-0">
-        <CharacterPanel
-          character={character}
-          runtimeState={runtimeState}
-          onAvatarChange={(avatar) => updateCharacterAvatar(avatar).catch(() => {})}
-        />
+      <div className="lg:w-[40%] flex flex-col gap-4 lg:min-h-0">
+        <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
+          <CharacterPanel
+            character={character}
+            runtimeState={runtimeState}
+            onAvatarChange={(avatar) => updateCharacterAvatar(avatar).catch(() => {})}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col justify-end gap-4 min-h-0 mt-6">
+        <div className="shrink-0 flex flex-col gap-4">
           <AnimatePresence>
             {diceUi && !adventureComplete && (
               <DiceRoller

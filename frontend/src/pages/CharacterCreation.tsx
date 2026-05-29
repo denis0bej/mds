@@ -105,7 +105,7 @@ function CharacterSheet({ character }: { character: CharacterData }) {
         Your Hero
       </h1>
       <p className="text-muted-foreground font-body text-sm mb-8">
-        Character sheet — view only. Use &quot;New Character&quot; in the sidebar to start over.
+        Character sheet — view only. Open Switch Character to forge a new hero.
       </p>
 
       <div className="narrative-panel space-y-8">
@@ -169,7 +169,7 @@ function CharacterSheet({ character }: { character: CharacterData }) {
 }
 
 const CharacterCreation = () => {
-  const { setCharacter, setSessionId, character, isLoading } = useGame();
+  const { character, isLoading, isDraftingNewCharacter, createCharacterSave } = useGame();
 
   const [avatar, setAvatar] = useState<string | null>(null);
   const [hasRolledStats, setHasRolledStats] = useState(false);
@@ -309,12 +309,7 @@ const CharacterCreation = () => {
     };
 
     try {
-      const result = await apiFetch<{ session_id: string; character: CharacterData }>("/character", {
-        method: "POST",
-        body: JSON.stringify(characterData),
-      });
-      setSessionId(result.session_id);
-      setCharacter(result.character);
+      await createCharacterSave(characterData);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to save character. Please try again.");
     } finally {
@@ -330,7 +325,7 @@ const CharacterCreation = () => {
     );
   }
 
-  if (character) {
+  if (character && !isDraftingNewCharacter) {
     return <CharacterSheet character={character} />;
   }
 
