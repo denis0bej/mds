@@ -5,16 +5,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useGame, type MainMission } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
 
-const LOADING_MESSAGES = [
-  "The Dungeon Master is consulting the stars...",
-  "Ancient runes are being deciphered...",
-  "The realm's map is taking shape...",
-  "Shadows gather at the edge of the known...",
-  "Your destiny is woven in silence...",
-  "Arcane forces answer the call...",
-  "The chronicles of fate are being written...",
-];
-
 const PLACEHOLDER_SUGGESTIONS = [
   "A dark quest through the Underdark, where ancient dwarven ruins hold the key to sealing a rift between planes...",
   "A coastal city plagued by pirate raids, where the true threat lurks beneath the waves...",
@@ -124,7 +114,7 @@ const AdventureSetup = () => {
   } = useGame();
   const [adventureText, setAdventureText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingIndex, setLoadingIndex] = useState(0);
+  const [generationMessage, setGenerationMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [generateConceptError, setGenerateConceptError] = useState<string | null>(null);
@@ -135,16 +125,6 @@ const AdventureSetup = () => {
       setAdventureText(adventureDescription);
     }
   }, [adventureDescription, map]);
-
-  useEffect(() => {
-    let interval: number | undefined;
-    if (isLoading) {
-      interval = window.setInterval(() => {
-        setLoadingIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
-      }, 2500);
-    }
-    return () => clearInterval(interval);
-  }, [isLoading]);
 
   const handleGenerateConcept = async () => {
     setIsGeneratingConcept(true);
@@ -168,13 +148,14 @@ const AdventureSetup = () => {
 
     setIsLoading(true);
     setError(null);
+    setGenerationMessage("Initializing generation...");
 
     const body: Record<string, unknown> = { description: adventureText.trim() };
     if (character) body.character = character;
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/adventure/generate`,
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/adventure/generate-stream`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -182,23 +163,49 @@ const AdventureSetup = () => {
         }
       );
 
-      const data = await res.json();
+      if (!response.ok) {
+        throw new Error("Forces of darkness have blocked the transmission. Please try again.");
+      }
 
-      if (!res.ok) {
-        if (res.status === 504) {
-          throw new Error("The Dungeon Master has fallen asleep. The response took too long — please try again.");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Could not start stream reader.");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.replace("data: ", "").trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.status === "error") {
+                throw new Error(event.message);
+              }
+              if (event.status === "complete") {
+                const data = event.data;
+                setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
+                navigate("/game");
+                return;
+              }
+              if (event.message) {
+                setGenerationMessage(event.message);
+              }
+            } catch (e) {
+              console.error("Error parsing SSE event:", e);
+            }
+          }
         }
-        throw new Error(
-          data.detail?.error || data.detail || "Something went wrong in the magical realms. Please try again."
-        );
       }
-
-      if (!data.map?.nodes?.length) {
-        throw new Error("The realm could not be mapped. The response was incomplete — please try again.");
-      }
-
-      setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
-      navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("Failed to fetch")) {
@@ -367,14 +374,14 @@ const AdventureSetup = () => {
               </motion.div>
               <AnimatePresence mode="wait">
                 <motion.p
-                  key={loadingIndex}
+                  key={generationMessage}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.3 }}
                   className="font-body text-gold-glow text-sm text-center italic"
                 >
-                  {LOADING_MESSAGES[loadingIndex]}
+                  {generationMessage}
                 </motion.p>
               </AnimatePresence>
               <div className="flex gap-1 mt-1">
