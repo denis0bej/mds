@@ -116,6 +116,17 @@ export function SavePickerDialog({
                       isActive ? "border-primary/60 bg-primary/5" : "border-gold/30"
                     }`}
                   >
+                    <div className="w-10 h-10 rounded-full border border-gold/50 overflow-hidden shrink-0 bg-card flex items-center justify-center">
+                      {save.character.avatar ? (
+                        <img
+                          src={save.character.avatar}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <User className="h-4 w-4 text-primary/70" />
+                      )}
+                    </div>
                     <button
                       type="button"
                       disabled={isSwitching || isActive}

@@ -172,6 +172,25 @@ export async function updateSave(
   if (error) throw new Error(error.message);
 }
 
+export async function updateSaveCharacter(
+  saveId: string,
+  character: CharacterData,
+): Promise<GameSaveSummary> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from("game_saves")
+    .update({
+      character,
+      character_name: character.name,
+    })
+    .eq("id", saveId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return toSummary(data as GameSaveRow);
+}
+
 export async function setActiveSave(userId: string, saveId: string): Promise<void> {
   const client = assertSupabase();
   const { error: deactivateError } = await client

@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useGame, CharacterStats, type CharacterData } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
+import { toast } from "sonner";
 import { CharacterAvatarPicker } from "@/components/CharacterAvatarPicker";
 
 const RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"];
@@ -113,7 +114,9 @@ function CharacterSheet({ character }: { character: CharacterData }) {
           <CharacterAvatarPicker
             avatar={character.avatar}
             onAvatarChange={(nextAvatar) => {
-              updateCharacterAvatar(nextAvatar).catch(() => {});
+              updateCharacterAvatar(nextAvatar).catch((err) => {
+                toast.error(err instanceof Error ? err.message : "Failed to save avatar.");
+              });
             }}
             label="Character Avatar"
           />

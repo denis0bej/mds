@@ -20,6 +20,7 @@ import {
   clearLocalLegacyState,
   setActiveSave,
   updateSave,
+  updateSaveCharacter,
   type GameSaveSummary,
   type SaveData,
 } from "@/lib/gameSaves";
@@ -433,12 +434,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
   const autosaveTimerRef = useRef<number | null>(null);
+  const characterRef = useRef<CharacterData | null>(null);
   const [eventLogVisible, setEventLogVisibleState] = useState(loadEventLogVisible);
   const [eventLogMinimized, setEventLogMinimized] = useState(false);
 
   const appendSessionEvent = useCallback((event: SessionEvent) => {
     setSessionEvents((prev) => [...prev, event]);
   }, []);
+
+  useEffect(() => {
+    characterRef.current = character;
+  }, [character]);
 
   const markSummaryDownloaded = useCallback(() => {
     setSummaryDownloaded(true);
@@ -595,8 +601,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
     autosaveTimerRef.current = window.setTimeout(() => {
       void (async () => {
+        const latestCharacter = characterRef.current;
+        if (!latestCharacter) return;
+
         try {
-          await updateSave(activeSaveId, character, buildSaveData());
+          await updateSave(activeSaveId, latestCharacter, buildSaveData());
           await refreshSavesList(user.id);
         } catch (err) {
           console.error("Autosave failed:", err);
@@ -1182,10 +1191,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const updatedCharacter = { ...character, avatar };
+      characterRef.current = updatedCharacter;
       setCharacter(updatedCharacter);
-      await updateSave(activeSaveId, updatedCharacter, buildSaveData());
+
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+
+      const saved = await updateSaveCharacter(activeSaveId, updatedCharacter);
+      setSavesList((prev) =>
+        prev.map((save) => (save.id === saved.id ? { ...save, character: saved.character } : save)),
+      );
     },
-    [character, activeSaveId, user, buildSaveData],
+    [character, activeSaveId, user],
   );
 
   return (

@@ -9,6 +9,7 @@ import { EventLog } from "@/components/EventLog";
 import { DiceRoller, ROLL_DURATION_MS } from "@/components/DiceRoller";
 import { toRollCheck, toRollResult, type RollCheck, type RollResult } from "@/lib/dice";
 import { getEndReasonDescription, getEndReasonLabel } from "@/lib/adventureEnd";
+import { toast } from "sonner";
 
 type DiceUiState = {
   check: RollCheck;
@@ -295,7 +296,11 @@ const GameLoop = () => {
           <CharacterPanel
             character={character}
             runtimeState={runtimeState}
-            onAvatarChange={(avatar) => updateCharacterAvatar(avatar).catch(() => {})}
+            onAvatarChange={(avatar) =>
+              updateCharacterAvatar(avatar).catch((err) => {
+                toast.error(err instanceof Error ? err.message : "Failed to save avatar.");
+              })
+            }
           />
         </div>
 
