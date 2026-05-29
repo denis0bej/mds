@@ -1,4 +1,4 @@
-import { Shield, Compass, Map, BookOpen, Trophy, Users, ScrollText } from "lucide-react";
+import { Shield, Compass, Map, BookOpen, Trophy, Users } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -90,17 +90,6 @@ export function AppSidebar() {
           </SidebarGroup>
 
           <div className={`mt-auto px-2 pb-4 space-y-1 ${collapsed ? "flex flex-col items-center" : ""}`}>
-            <NavLink
-              to="/past-adventures"
-              className={`${bottomLinkClass} ${collapsed ? "justify-center w-auto px-2" : ""}`}
-              activeClassName="text-primary bg-primary/10"
-              title="Past Adventures"
-            >
-              <ScrollText className="h-4 w-4 flex-shrink-0" />
-              {!collapsed && (
-                <span className="font-display text-xs uppercase tracking-wider">Past Adventures</span>
-              )}
-            </NavLink>
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
