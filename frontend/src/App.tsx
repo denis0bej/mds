@@ -10,16 +10,17 @@ import AdventureSetup from "./pages/AdventureSetup";
 import MapView from "./pages/MapView";
 import GameLoop from "./pages/GameLoop";
 import AdventureSummary from "./pages/AdventureSummary";
+import PastAdventures from "./pages/PastAdventures";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import CreateAccount from "./pages/CreateAccount";
 import Account from "./pages/Account";
 import { GameProvider } from "@/context/GameContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { SettingsProvider } from "@/context/SettingsContext";
+import { ThemeProvider } from "@/components/theme-provider";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { SupabaseConfigError } from "@/components/SupabaseConfigError";
-
-import { UIPreferencesProvider } from "@/context/UIPreferencesContext";
 
 const App = () => {
   if (!isSupabaseConfigured) {
@@ -27,39 +28,42 @@ const App = () => {
   }
 
   return (
-    <UIPreferencesProvider>
-      <TooltipProvider>
-        <AuthProvider>
-          <GameProvider>
-            <Toaster />
-            <BrowserRouter>
-              <Routes>
-                <Route element={<GuestRoute />}>
-                  <Route element={<AuthLayout />}>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/create-account" element={<CreateAccount />} />
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class">
+      <SettingsProvider>
+        <TooltipProvider>
+          <AuthProvider>
+            <GameProvider>
+              <Toaster />
+              <BrowserRouter>
+                <Routes>
+                  <Route element={<GuestRoute />}>
+                    <Route element={<AuthLayout />}>
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/create-account" element={<CreateAccount />} />
+                    </Route>
                   </Route>
-                </Route>
 
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<AppLayout />}>
-                    <Route path="/" element={<CharacterCreation />} />
-                    <Route path="/account" element={<Account />} />
-                    <Route path="/adventure" element={<AdventureSetup />} />
-                    <Route path="/map" element={<MapView />} />
-                    <Route path="/game" element={<GameLoop />} />
-                    <Route path="/summary" element={<AdventureSummary />} />
-                    <Route path="*" element={<NotFound />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppLayout />}>
+                      <Route path="/" element={<CharacterCreation />} />
+                      <Route path="/account" element={<Account />} />
+                      <Route path="/adventure" element={<AdventureSetup />} />
+                      <Route path="/map" element={<MapView />} />
+                      <Route path="/game" element={<GameLoop />} />
+                      <Route path="/summary" element={<AdventureSummary />} />
+                      <Route path="/past-adventures" element={<PastAdventures />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
                   </Route>
-                </Route>
 
-                <Route path="*" element={<Navigate to="/login" replace />} />
-              </Routes>
-            </BrowserRouter>
-          </GameProvider>
-        </AuthProvider>
-      </TooltipProvider>
-    </UIPreferencesProvider>
+                  <Route path="*" element={<Navigate to="/login" replace />} />
+                </Routes>
+              </BrowserRouter>
+            </GameProvider>
+          </AuthProvider>
+        </TooltipProvider>
+      </SettingsProvider>
+    </ThemeProvider>
   );
 };
 

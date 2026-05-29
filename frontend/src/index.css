@@ -6,6 +6,51 @@
 
 @layer base {
   :root {
+    --background: 30 20% 98%;
+    --foreground: 30 20% 15%;
+
+    --card: 30 20% 95%;
+    --card-foreground: 30 20% 15%;
+
+    --popover: 30 20% 98%;
+    --popover-foreground: 30 20% 15%;
+
+    --primary: 40 49% 45%;
+    --primary-foreground: 30 20% 98%;
+
+    --secondary: 30 10% 90%;
+    --secondary-foreground: 30 20% 15%;
+
+    --muted: 30 10% 92%;
+    --muted-foreground: 30 10% 40%;
+
+    --accent: 0 69% 45%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 69% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 40 20% 80%;
+    --input: 30 10% 90%;
+    --ring: 40 49% 45%;
+
+    --radius: 0.25rem;
+
+    --parchment: 30 20% 95%;
+    --parchment-foreground: 30 20% 15%;
+    --gold-glow: 40 49% 45%;
+
+    --sidebar-background: 30 15% 95%;
+    --sidebar-foreground: 30 10% 30%;
+    --sidebar-primary: 40 49% 45%;
+    --sidebar-primary-foreground: 30 20% 98%;
+    --sidebar-accent: 30 10% 90%;
+    --sidebar-accent-foreground: 40 49% 45%;
+    --sidebar-border: 40 10% 85%;
+    --sidebar-ring: 40 49% 45%;
+  }
+
+  .dark {
     --background: 240 7% 4%;
     --foreground: 0 0% 82%;
 
@@ -34,10 +79,8 @@
     --input: 240 5% 14%;
     --ring: 40 49% 56%;
 
-    --radius: 0.25rem;
-
-    --parchment: 34 47% 90%;
-    --parchment-foreground: 30 20% 15%;
+    --parchment: 240 5% 12%;
+    --parchment-foreground: 0 0% 82%;
     --gold-glow: 40 49% 56%;
 
     --sidebar-background: 240 7% 6%;
@@ -126,9 +169,9 @@
   .parchment-bg {
     background: linear-gradient(
       135deg,
-      hsl(var(--parchment) / 0.08) 0%,
-      hsl(var(--parchment) / 0.04) 50%,
-      hsl(var(--parchment) / 0.06) 100%
+      hsl(var(--parchment) / 0.8) 0%,
+      hsl(var(--parchment) / 0.6) 50%,
+      hsl(var(--parchment) / 0.7) 100%
     );
   }
 

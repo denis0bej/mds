@@ -8,8 +8,6 @@ const MAP_PADDING = 80;
 const MAP_MIN_WIDTH = 800;
 const MAP_MIN_HEIGHT = 540;
 
-import { useUIPreferences } from "../context/UIPreferencesContext";
-
 const statusStyles = {
   current: {
     outer: "border-primary bg-primary/20 shadow-[0_0_24px_4px_hsl(var(--primary)/0.5)]",
@@ -24,8 +22,8 @@ const statusStyles = {
     text: "text-muted-foreground/40",
   },
   goal: {
-    outer: "border-amber-500/60 bg-amber-500/10 cursor-not-allowed shadow-[0_0_16px_2px_rgba(251,191,36,0.15)]",
-    text: "text-amber-600 dark:text-amber-400 font-medium",
+    outer: "border-amber-600/60 dark:border-amber-400/60 bg-amber-100 dark:bg-amber-950/40 cursor-not-allowed shadow-[0_0_16px_2px_rgba(251,191,36,0.1)]",
+    text: "text-amber-700/50 dark:text-amber-400/50",
   },
 };
 
@@ -86,9 +84,9 @@ const NodeDetailPanel = ({
         )}
 
         {node.isGoal && (
-          <div className="bg-amber-950/40 border border-amber-400/40 rounded-sm px-3 py-2 flex items-center gap-2">
-            <Crown className="h-3.5 w-3.5 text-amber-400" />
-            <p className="font-display text-[10px] text-amber-400 uppercase tracking-widest">
+          <div className="bg-amber-100 dark:bg-amber-950/40 border border-amber-500/40 dark:border-amber-400/40 rounded-sm px-3 py-2 flex items-center gap-2">
+            <Crown className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400" />
+            <p className="font-display text-[10px] text-amber-700 dark:text-amber-400 uppercase tracking-widest font-bold dark:font-normal">
               Final Objective
             </p>
           </div>
@@ -215,11 +213,11 @@ const MapView = () => {
           { color: "bg-primary/20 border-primary shadow-[0_0_10px_hsl(var(--primary)/0.4)]", label: "Current" },
           { color: "bg-card border-primary/50", label: "Discovered" },
           { color: "bg-muted/10 border-muted/20 opacity-50", label: "Unknown" },
-          { color: "bg-amber-950/40 border-amber-400/60", label: "Objective", icon: true },
+          { color: "bg-amber-100 dark:bg-amber-950/40 border-amber-600 dark:border-amber-400/60", label: "Objective", icon: true },
         ].map(({ color, label, icon }) => (
           <div key={label} className="flex items-center gap-1.5">
             <div className={`w-3 h-3 rounded-full border ${color} flex items-center justify-center`}>
-              {icon && <Crown className="w-2 h-2 text-amber-400/60" />}
+              {icon && <Crown className="w-2 h-2 text-amber-700 dark:text-amber-400" />}
             </div>
             <span className="font-display text-[10px] text-muted-foreground uppercase tracking-wider">
               {label}
@@ -322,7 +320,7 @@ const MapView = () => {
 
                 {isSelected && !isHidden && (
                   <div
-                    className="absolute inset-0 rounded-full border-2 border-primary shadow-[0_0_10px_white] dark:shadow-none"
+                    className="absolute inset-0 rounded-full border-2 border-white/60"
                     style={{ width: NODE_RADIUS * 2, height: NODE_RADIUS * 2 }}
                   />
                 )}
@@ -342,8 +340,8 @@ const MapView = () => {
                 >
                   {isGoal && isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
-                      <Crown className="h-4 w-4 text-amber-600 dark:text-amber-400/50" />
-                      <span className="font-display text-[8px] text-amber-700 dark:text-amber-400/40">???</span>
+                      <Crown className="h-4 w-4 text-amber-600/60 dark:text-amber-400/50" />
+                      <span className="font-display text-[8px] text-amber-600/50 dark:text-amber-400/40">???</span>
                     </div>
                   ) : isHidden ? (
                     <div className="flex flex-col items-center gap-0.5">
@@ -375,7 +373,7 @@ const MapView = () => {
                 )}
 
                 {isGoal && (
-                  <span className="mt-1 font-sans text-[10px] text-amber-800 dark:text-amber-400 uppercase tracking-wider font-bold">
+                  <span className="mt-1 font-display text-[9px] text-amber-700 dark:text-amber-400/80 uppercase tracking-widest font-bold dark:font-normal">
                     Objective
                   </span>
                 )}

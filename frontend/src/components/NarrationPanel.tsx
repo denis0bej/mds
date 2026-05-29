@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SkipForward } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSettings } from "@/context/SettingsContext";
 
 export type NarrativeMessage = {
   id: string;
@@ -29,8 +30,6 @@ const roleLabels: Record<NarrativeMessage["role"], string | null> = {
   system: null,
 };
 
-import { useUIPreferences } from "@/context/UIPreferencesContext";
-
 function TypewriterText({
   text,
   animate,
@@ -42,7 +41,7 @@ function TypewriterText({
   onComplete?: () => void;
   onSkip?: () => void;
 }) {
-  const { speedMs } = useUIPreferences();
+  const { typingSpeed } = useSettings();
   const [displayed, setDisplayed] = useState(animate ? "" : text);
   const [isAnimating, setIsAnimating] = useState(animate);
   const indexRef = useRef(0);
@@ -60,7 +59,7 @@ function TypewriterText({
     completedRef.current = false;
     indexRef.current = 0;
 
-    if (!animate) {
+    if (!animate || typingSpeed === 0) {
       setDisplayed(text);
       setIsAnimating(false);
       return;
@@ -77,10 +76,10 @@ function TypewriterText({
         window.clearInterval(interval);
         finish();
       }
-    }, speedMs);
+    }, typingSpeed);
 
     return () => window.clearInterval(interval);
-  }, [text, animate, finish, speedMs]);
+  }, [text, animate, finish, typingSpeed]);
 
   return (
     <div className="relative">
