@@ -15,12 +15,19 @@ from rules_engine import (
     apply_state_changes,
     reconcile_state_changes,
 )
+from adventure_end import (
+    apply_auto_healing_potion,
+    evaluate_adventure_end,
+    ensure_main_mission,
+    should_complete_reach_mission,
+)
 from prompts import (
     DM_ACTION_SYSTEM_PROMPT,
     WORLD_ARCHITECT_SYSTEM_PROMPT,
     ENCOUNTER_PRESENTATION_SYSTEM_PROMPT,
     GENERATE_BACKSTORY_PROMPT,
     GENERATE_ADVENTURE_CONCEPT_PROMPT,
+    CHRONICLER_SYSTEM_PROMPT,
 )
 
 load_dotenv()
@@ -67,6 +74,7 @@ class EnterNodeRequest(BaseModel):
     adventure_description: Optional[str] = None
     recent_history: Optional[List[HistoryMessage]] = []
     game_state: Optional[dict] = None
+    main_mission: Optional[dict] = None
 
 class GameActionRequest(BaseModel):
     action: str
@@ -76,6 +84,18 @@ class GameActionRequest(BaseModel):
     adventure_description: Optional[str] = None
     recent_history: Optional[List[HistoryMessage]] = []
     game_state: Optional[dict] = None
+    main_mission: Optional[dict] = None
+
+
+class AdventureSummaryRequest(BaseModel):
+    character: dict
+    session_log: List[HistoryMessage]
+    stats: dict
+    end_reason: Optional[str] = None
+    main_mission: Optional[dict] = None
+    adventure_description: Optional[str] = None
+    narrative_intro: Optional[str] = None
+    map_nodes: Optional[List[dict]] = None
 
 
 class GenerateBackstoryRequest(BaseModel):
@@ -135,6 +155,8 @@ Character:
         user_content += f"\n\nRecent history:\n{history_text}"
     if req.game_state:
         user_content += f"\n\nGame state:\n{json.dumps(req.game_state, indent=2)}"
+    if req.main_mission:
+        user_content += f"\n\nMain mission (ONLY end adventure on mission completion, early exit, or death — NOT on node_complete alone):\n{json.dumps(req.main_mission, indent=2)}"
     return user_content
 
 
@@ -162,7 +184,13 @@ def _extract_runtime_state(req: GameActionRequest) -> dict:
     }
 
 
-def _finalize_action_result(result: dict, runtime_state: dict, player_action: str, node: dict) -> dict:
+def _finalize_action_result(
+    result: dict,
+    runtime_state: dict,
+    player_action: str,
+    node: dict,
+    main_mission: Optional[dict] = None,
+) -> dict:
     category = result.get("category")
     phase = result.get("phase")
     
@@ -171,8 +199,6 @@ def _finalize_action_result(result: dict, runtime_state: dict, player_action: st
         result["state_changes"]["node_complete"] = False
     
     # Safety Check: trivial simple_action in serious nodes
-    # According to D&D 5e rules and our prompt, simple_action is for trivial tasks.
-    # Trivial tasks should not resolve combat, traps, or boss encounters.
     if category == "simple_action" and result.get("state_changes", {}).get("node_complete"):
         scene_type = node.get("content", {}).get("scene_type", "")
         if scene_type in ("combat", "boss", "trap"):
@@ -187,16 +213,39 @@ def _finalize_action_result(result: dict, runtime_state: dict, player_action: st
             result.get("state_changes"),
         )
         updated_state = apply_state_changes(merged_changes, runtime_state)
-        return {
+        updated_state, potion_meta = apply_auto_healing_potion(updated_state)
+        finalized = {
             **result,
             "state_changes": merged_changes,
             "game_state": updated_state,
         }
+        if potion_meta.get("auto_potion_used"):
+            finalized["auto_potion_used"] = True
+            finalized["auto_potion_heal"] = potion_meta.get("heal_amount")
+            heal = potion_meta.get("heal_amount")
+            suffix = (
+                f"\n\nYour body slumps as you fall — but instinct takes over. "
+                f"You automatically quaff a healing potion from your belt, recovering {heal} HP."
+            )
+            finalized["narrative"] = (finalized.get("narrative") or "") + suffix
+    else:
+        finalized = {
+            **result,
+            "game_state": runtime_state,
+        }
 
-    return {
-        **result,
-        "game_state": runtime_state,
-    }
+    end_game, end_reason = evaluate_adventure_end(
+        main_mission,
+        node,
+        player_action,
+        finalized.get("game_state") or runtime_state,
+        finalized,
+    )
+    if end_game:
+        finalized["adventure_complete"] = True
+        finalized["completion_reason"] = end_reason
+
+    return finalized
 
 @router.post("/character")
 async def save_character(char: CharacterData):
@@ -304,9 +353,12 @@ async def generate_adventure(req: AdventureRequest):
                 "raw": raw_content[:500]
             })
 
+        normalized_map = _normalize_map(adventure_data.get("map"))
+
         return {
             "narrativeIntro": adventure_data.get("narrativeIntro"),
-            "map": _normalize_map(adventure_data.get("map")),
+            "map": normalized_map,
+            "mainMission": ensure_main_mission(adventure_data.get("mainMission"), (normalized_map or {}).get("nodes") or []),
             "session_id": used_session_id
         }
 
@@ -445,12 +497,18 @@ Character:
                 "raw": raw_content[:500],
             })
 
-        return {
+        response_payload = {
             "type": encounter.get("type", "encounter_presentation"),
             "narrative": encounter.get("narrative", ""),
             "visible_elements": encounter.get("visible_elements", []),
             "suggested_actions": encounter.get("suggested_actions", []),
         }
+
+        if should_complete_reach_mission(req.main_mission, req.node):
+            response_payload["adventure_complete"] = True
+            response_payload["completion_reason"] = "victory"
+
+        return response_payload
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
     except HTTPException:
@@ -512,15 +570,76 @@ async def game_action(req: GameActionRequest):
                 runtime_state,
                 req.action,
                 req.node,
+                req.main_mission,
             )
 
-        return _finalize_action_result(result, runtime_state, req.action, req.node)
+        return _finalize_action_result(result, runtime_state, req.action, req.node, req.main_mission)
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Action failed", "detail": str(e)})
+
+
+@router.post("/game/summary")
+async def generate_adventure_summary(req: AdventureSummaryRequest):
+    log_text = "\n".join(
+        f"{msg.role.upper()}: {msg.text}" for msg in req.session_log
+    )
+    if not log_text.strip():
+        log_text = "(No session events recorded.)"
+
+    user_content = f"""Character:
+{json.dumps(req.character, indent=2, ensure_ascii=False)}
+
+Final statistics:
+{json.dumps(req.stats, indent=2)}"""
+
+    if req.end_reason:
+        user_content += f"\n\nAdventure ended because: {req.end_reason}"
+    if req.main_mission:
+        user_content += f"\n\nMain mission:\n{json.dumps(req.main_mission, indent=2)}"
+
+    user_content += f"""
+
+Full session log:
+{log_text}"""
+
+    if req.adventure_description:
+        user_content += f"\n\nAdventure concept:\n{req.adventure_description}"
+    if req.narrative_intro:
+        user_content += f"\n\nAdventure introduction:\n{req.narrative_intro}"
+    if req.map_nodes:
+        user_content += f"\n\nLocations in this adventure:\n{json.dumps(req.map_nodes, indent=2, ensure_ascii=False)}"
+
+    try:
+        response = get_openai_client().chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": CHRONICLER_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw = response.choices[0].message.content
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=500, detail="Invalid summary format from AI.")
+
+        return {
+            "title": data.get("title", "A Hero's Triumph"),
+            "narrative": data.get("narrative", ""),
+            "stats": req.stats,
+        }
+    except openai.APITimeoutError:
+        raise HTTPException(status_code=504, detail="The Chronicler fell silent. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Summary generation failed", "detail": str(e)})
+
 
 @router.get("/health")
 async def health():

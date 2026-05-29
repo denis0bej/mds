@@ -56,6 +56,12 @@ Rules:
 - Mark node_complete true in state_changes when the player has met the "Completion Conditions" OR has interacted enough with the scene that moving on is appropriate.
 - For "exploration" scenes, node_complete can be true if the player has explored the main elements or clearly expresses a desire to move to the next area.
 - In combat, trap, or boss nodes, node_complete must NEVER be true until the threat is neutralized or the puzzle solved.
+- node_complete on the goal node does NOT automatically end the adventure — only main mission completion ends it (see mission rules in user context).
+- When the player EXPLICITLY wants to end the adventure early (quit, abandon quest, leave adventure), respond with:
+  "end_adventure": true, "end_reason": "early_exit" and a narrative farewell. Do NOT require main mission completion.
+- For SLAY missions: when the target creature is killed/defeated, set flags_set: {"mission_target_defeated": true} or {"mission_complete": true}.
+- For RECOVER missions: when the player obtains the target object/person, set flags_set: {"mission_object_obtained": true} or {"mission_complete": true} AND inventory_add if appropriate.
+- For REACH missions: do NOT end the adventure yourself — arrival at the destination is handled by the game engine.
 - ALWAYS populate state_changes for simple_action and roll_resolved complex_action when HP, inventory, or effects change.
 - When the player CONSUMES an item (drink potion, use scroll): MUST set inventory_remove with the exact item name from game_state inventory AND hp_delta if it heals or damages.
 - When the player PICKS UP an item: MUST set inventory_add with { "name", "description", "icon" }.
@@ -89,6 +95,12 @@ Respond EXCLUSIVELY with a valid JSON object, without markdown, without addition
 MANDATORY STRUCTURE of the response (respect EXACTLY this top-level schema):
 {
   "narrativeIntro": "2-3 paragraphs of epic introduction",
+  "mainMission": {
+    "type": "slay",
+    "title": "Short mission title shown to the player",
+    "target": "Name of creature, location, or object",
+    "targetNodeId": "id of the goal node (must match the node with isGoal: true)"
+  },
   "map": {
     "nodes": [ <list of nodes — see node format below> ],
     "edges": [
@@ -96,6 +108,14 @@ MANDATORY STRUCTURE of the response (respect EXACTLY this top-level schema):
     ]
   }
 }
+
+MAIN MISSION TYPES (choose EXACTLY ONE that fits the adventure description):
+1. "slay" — player must kill a specific creature (boss, dragon, villain). Put the creature in the goal node's elements as type "boss" or "monster".
+2. "reach" — player must reach a specific final location (escape, infiltration). The goal node is the destination; no kill required on arrival.
+3. "recover" — player must obtain something (artifact, person, treasure). Put the object in an element as type "key_item" or "reward" at the goal node or earlier node.
+
+The mainMission.target MUST match the creature name, location name, or object name in the adventure.
+The mainMission.targetNodeId MUST be the id of the node with isGoal: true.
 
 NODE FORMAT (EVERY node from the nodes list MUST look like this):
 {
@@ -191,3 +211,19 @@ Rules:
 - If character context is provided, tie the quest to their backstory or class.
 - Include a clear objective and atmospheric hook.
 - No markdown."""
+
+CHRONICLER_SYSTEM_PROMPT = """You are the Chronicler — a D&D adventure narrator who writes the final tale after a completed quest.
+
+Given the full session log, character, adventure context, final statistics, and how the adventure ended, write a closing narrative.
+
+Respond EXCLUSIVELY with valid JSON:
+{
+  "title": "A short title for this adventure (5-8 words)",
+  "narrative": "3-5 paragraphs in second person past tense. Weave together key moments from the session log. Tone depends on outcome: triumphant for victory, somber for death, reflective for early exit."
+}
+
+Rules:
+- Write in English.
+- Base the story ONLY on events present in the session log — do not invent major plot points absent from the log.
+- End on a note that matches the outcome (victory, death, or early departure).
+- Do NOT use markdown."""

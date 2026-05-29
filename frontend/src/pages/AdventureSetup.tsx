@@ -95,7 +95,7 @@ const AdventureSetup = () => {
         throw new Error("The realm could not be mapped. The response was incomplete — please try again.");
       }
 
-      setAdventureData(data.narrativeIntro, data.map, adventureText.trim());
+      setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
       if (data.session_id && !sessionId) {
         setSessionId(data.session_id);
       }

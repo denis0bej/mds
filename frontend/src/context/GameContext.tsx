@@ -2,8 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { apiFetch } from "@/lib/api";
 import type { NarrativeMessage } from "@/components/NarrationPanel";
 import {
+  applyAutoHealingPotion,
+  evaluateMissionVictory,
+  shouldCompleteReachMission,
+  type AdventureEndReason,
+} from "@/lib/adventureEnd";
+import {
   createInitialRuntimeState,
-  normalizeRuntimeState,
   runtimeStateToApi,
   resolveRuntimeStateAfterAction,
   type GameRuntimeState,
@@ -17,6 +22,23 @@ import {
   saveEventLogVisible,
   type SessionEvent,
 } from "@/lib/sessionEvents";
+import {
+  createInitialSessionStats,
+  recordLocationVisit,
+  updateSessionStatsAfterAction,
+  type SessionStats,
+} from "@/lib/sessionStats";
+
+export type { AdventureEndReason } from "@/lib/adventureEnd";
+
+export type MissionType = "slay" | "reach" | "recover";
+
+export type MainMission = {
+  type: MissionType;
+  title: string;
+  target: string;
+  targetNodeId?: string;
+};
 
 export type { GameRuntimeState, InventoryItem, StatusEffect } from "@/lib/gameState";
 export type { SessionEvent, SessionEventType } from "@/lib/sessionEvents";
@@ -119,6 +141,8 @@ export type EncounterData = {
   narrative: string;
   visible_elements: string[];
   suggested_actions: string[];
+  adventure_complete?: boolean;
+  completion_reason?: AdventureEndReason;
 };
 
 const ADVENTURE_STORAGE_KEY = "dnd_adventure_state";
@@ -126,12 +150,31 @@ const ADVENTURE_STORAGE_KEY = "dnd_adventure_state";
 type PersistedAdventure = {
   narrativeIntro: string | null;
   adventureDescription: string | null;
+  mainMission: MainMission | null;
   map: GameMap | null;
   currentNodeId: string | null;
   narrativeHistory: NarrativeMessage[];
   progressCompletedNodeIds: string[];
   runtimeState: GameRuntimeState | null;
   sessionEvents: SessionEvent[];
+  sessionStats: SessionStats;
+  adventureComplete: boolean;
+  adventureEndReason: AdventureEndReason | null;
+  adventureSummary: AdventureSummaryData | null;
+};
+
+export type AdventureSummaryData = {
+  title: string;
+  narrative: string;
+  stats: {
+    enemies_defeated: number;
+    locations_visited: number;
+    items_collected: number;
+    hero_name?: string;
+    hero_class?: string;
+    hero_race?: string;
+    location_names?: string[];
+  };
 };
 
 function loadPersistedAdventure(): PersistedAdventure | null {
@@ -169,6 +212,10 @@ export type GameActionResult = {
     reason: string;
     dice?: string;
   };
+  adventure_complete?: boolean;
+  completion_reason?: AdventureEndReason;
+  auto_potion_used?: boolean;
+  auto_potion_heal?: number;
 };
 
 export function getAdjacentNodeIds(map: GameMap, nodeId: string): string[] {
@@ -304,6 +351,7 @@ interface GameState {
   setSessionId: (id: string | null) => void;
   narrativeIntro: string | null;
   adventureDescription: string | null;
+  mainMission: MainMission | null;
   map: GameMap | null;
   currentNodeId: string | null;
   narrativeHistory: NarrativeMessage[];
@@ -322,12 +370,24 @@ interface GameState {
   eventLogMinimized: boolean;
   setEventLogVisible: (visible: boolean) => void;
   setEventLogMinimized: (minimized: boolean) => void;
-  setAdventureData: (intro: string, mapData: GameMap | null, description: string) => void;
+  sessionStats: SessionStats;
+  adventureComplete: boolean;
+  adventureEndReason: AdventureEndReason | null;
+  adventureSummary: AdventureSummaryData | null;
+  isGeneratingSummary: boolean;
+  summaryError: string | null;
+  setAdventureData: (
+    intro: string,
+    mapData: GameMap | null,
+    description: string,
+    mission?: MainMission | null,
+  ) => void;
   updateMap: (mapData: GameMap) => void;
   clearAdventureData: () => void;
   enterLocation: (nodeId: string, travelPrompt?: string) => Promise<void>;
   travelToLocation: (nodeId: string, prompt: string) => Promise<void>;
   submitAction: (action: string) => Promise<void>;
+  generateAdventureSummary: () => Promise<AdventureSummaryData>;
   clearAnimateMessage: () => void;
   isLoading: boolean;
 }
@@ -343,6 +403,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [adventureDescription, setAdventureDescription] = useState<string | null>(
     persisted?.adventureDescription ?? null,
   );
+  const [mainMission, setMainMission] = useState<MainMission | null>(persisted?.mainMission ?? null);
   const [map, setMap] = useState<GameMap | null>(persisted?.map ?? null);
   const [currentNodeId, setCurrentNodeId] = useState<string | null>(persisted?.currentNodeId ?? null);
   const [narrativeHistory, setNarrativeHistory] = useState<NarrativeMessage[]>(
@@ -362,6 +423,18 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [lastCheck, setLastCheck] = useState<GameActionResult["check"] | null>(null);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sessionStats, setSessionStats] = useState<SessionStats>(
+    persisted?.sessionStats ?? createInitialSessionStats(),
+  );
+  const [adventureComplete, setAdventureComplete] = useState(persisted?.adventureComplete ?? false);
+  const [adventureEndReason, setAdventureEndReason] = useState<AdventureEndReason | null>(
+    persisted?.adventureEndReason ?? null,
+  );
+  const [adventureSummary, setAdventureSummary] = useState<AdventureSummaryData | null>(
+    persisted?.adventureSummary ?? null,
+  );
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>(() => {
     if (persisted?.sessionEvents?.length) return persisted.sessionEvents;
@@ -386,22 +459,32 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     savePersistedAdventure({
       narrativeIntro,
       adventureDescription,
+      mainMission,
       map,
       currentNodeId,
       narrativeHistory,
       progressCompletedNodeIds,
       runtimeState,
       sessionEvents,
+      sessionStats,
+      adventureComplete,
+      adventureEndReason,
+      adventureSummary,
     });
   }, [
     narrativeIntro,
     adventureDescription,
+    mainMission,
     map,
     currentNodeId,
     narrativeHistory,
     progressCompletedNodeIds,
     runtimeState,
     sessionEvents,
+    sessionStats,
+    adventureComplete,
+    adventureEndReason,
+    adventureSummary,
   ]);
 
   useEffect(() => {
@@ -410,12 +493,65 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [character, map, runtimeState]);
 
-  const setAdventureData = (intro: string, mapData: GameMap | null, description: string) => {
+  useEffect(() => {
+    if (mainMission || !map) return;
+    const goal = map.nodes.find((n) => n.isGoal);
+    if (!goal) return;
+
+    const boss = goal.content?.elements.find((e) => e.type === "boss" || e.type === "monster");
+    if (boss) {
+      setMainMission({
+        type: "slay",
+        title: `Slay ${boss.name}`,
+        target: boss.name,
+        targetNodeId: goal.id,
+      });
+      return;
+    }
+
+    const keyItem = goal.content?.elements.find((e) =>
+      ["key_item", "reward", "item"].includes(e.type),
+    );
+    if (keyItem) {
+      setMainMission({
+        type: "recover",
+        title: `Recover ${keyItem.name}`,
+        target: keyItem.name,
+        targetNodeId: goal.id,
+      });
+      return;
+    }
+
+    setMainMission({
+      type: "reach",
+      title: `Reach ${goal.name}`,
+      target: goal.name,
+      targetNodeId: goal.id,
+    });
+  }, [mainMission, map]);
+
+  const finishAdventure = useCallback((reason: AdventureEndReason) => {
+    setAdventureComplete(true);
+    setAdventureEndReason(reason);
+  }, []);
+
+  const setAdventureData = (
+    intro: string,
+    mapData: GameMap | null,
+    description: string,
+    mission: MainMission | null = null,
+  ) => {
     if (!mapData?.nodes) return;
+    const startNodeId = mapData.nodes.find((n) => n.status === "current")?.id ?? null;
+    const initialStats = startNodeId
+      ? recordLocationVisit(createInitialSessionStats(), startNodeId)
+      : createInitialSessionStats();
+
     setNarrativeIntro(intro);
     setMap(mapData);
     setAdventureDescription(description);
-    setCurrentNodeId(mapData.nodes.find((n) => n.status === "current")?.id ?? null);
+    setMainMission(mission);
+    setCurrentNodeId(startNodeId);
     setNarrativeHistory([]);
     setProgressCompletedNodeIds([]);
     setRuntimeState(character ? createInitialRuntimeState(character) : null);
@@ -429,6 +565,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       }),
     ]);
     setEventLogMinimized(false);
+    setSessionStats(initialStats);
+    setAdventureComplete(false);
+    setAdventureEndReason(null);
+    setAdventureSummary(null);
+    setSummaryError(null);
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -438,6 +579,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const clearAdventureData = () => {
     setNarrativeIntro(null);
     setAdventureDescription(null);
+    setMainMission(null);
     setMap(null);
     setCurrentNodeId(null);
     setNarrativeHistory([]);
@@ -448,6 +590,11 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setLastRoll(null);
     setLastCheck(null);
     setSessionEvents([]);
+    setSessionStats(createInitialSessionStats());
+    setAdventureComplete(false);
+    setAdventureEndReason(null);
+    setAdventureSummary(null);
+    setSummaryError(null);
     localStorage.removeItem(ADVENTURE_STORAGE_KEY);
   };
 
@@ -482,6 +629,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
       setMap(traveledMap);
       setCurrentNodeId(nodeId);
+      setSessionStats((prev) => recordLocationVisit(prev, nodeId));
 
       let historyForApi = narrativeHistory;
       if (travelPrompt?.trim()) {
@@ -520,6 +668,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             narrative_intro: narrativeIntro,
             adventure_description: adventureDescription,
             recent_history: historyForApi.map((m) => ({ role: m.role, text: m.text })),
+            main_mission: mainMission,
             game_state: {
               current_node_id: nodeId,
               visited_node_ids: traveledMap.nodes
@@ -546,6 +695,12 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             location: updatedNode.name,
           }),
         );
+        if (
+          encounter.adventure_complete ||
+          (isTravel && shouldCompleteReachMission(mainMission, updatedNode))
+        ) {
+          finishAdventure(encounter.completion_reason ?? "victory");
+        }
         if (isTravel) {
           // If we're traveling to a node we've never completed, we don't add it.
           // But we MUST NOT remove it if it was already completed (backtracking).
@@ -561,7 +716,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setIsEnteringNode(false);
       }
     },
-    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds, runtimeState, appendSessionEvent],
+    [map, character, narrativeIntro, adventureDescription, narrativeHistory, progressCompletedNodeIds, runtimeState, mainMission, finishAdventure, appendSessionEvent],
   );
 
   const travelToLocation = useCallback(
@@ -578,6 +733,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       if (!map || !character || !currentNodeId) {
         throw new Error("No active game session.");
       }
+
+      if (adventureComplete) return;
 
       const trimmed = action.trim();
       if (!trimmed) return;
@@ -622,6 +779,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               role: m.role,
               text: m.text,
             })),
+            main_mission: mainMission,
             game_state: {
               current_node_id: currentNodeId,
               progress_completed_node_ids: progressCompletedNodeIds,
@@ -630,10 +788,28 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           }),
         });
 
+        let narrativeText = result.narrative;
+        let nextRuntime =
+          result.game_state || result.state_changes
+            ? resolveRuntimeStateAfterAction(
+                trimmed,
+                apiRuntime ?? createInitialRuntimeState(character),
+                result,
+              )
+            : apiRuntime ?? createInitialRuntimeState(character);
+
+        if (!result.auto_potion_used) {
+          const potionResult = applyAutoHealingPotion(nextRuntime);
+          if (potionResult.used) {
+            nextRuntime = potionResult.state;
+            narrativeText += `\n\nYour body slumps as you fall — but instinct takes over. You automatically quaff a healing potion from your belt, recovering ${potionResult.healAmount} HP.`;
+          }
+        }
+
         const gmMessage: NarrativeMessage = {
           id: `gm-${Date.now()}`,
           role: "gm",
-          text: result.narrative,
+          text: narrativeText,
         };
         setNarrativeHistory((prev) => [...prev, gmMessage]);
         setAnimateMessageId(gmMessage.id);
@@ -664,11 +840,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           );
         }
 
-        if (result.game_state || result.state_changes) {
-          setRuntimeState(
-            resolveRuntimeStateAfterAction(trimmed, apiRuntime ?? createInitialRuntimeState(character), result),
-          );
-        }
+        setRuntimeState(nextRuntime);
 
         const stateSummary = result.state_changes
           ? formatStateChangeSummary(result.state_changes)
@@ -695,6 +867,20 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             suggested_actions: result.suggested_actions!,
           }));
         }
+
+        if (result.state_changes) {
+          setSessionStats((prev) =>
+            updateSessionStatsAfterAction(prev, currentNode, result.state_changes),
+          );
+        }
+
+        if (result.adventure_complete && result.completion_reason) {
+          finishAdventure(result.completion_reason);
+        } else if (nextRuntime.hp <= 0) {
+          finishAdventure("death");
+        } else if (evaluateMissionVictory(mainMission, currentNode, nextRuntime, result.state_changes)) {
+          finishAdventure("victory");
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Action failed.";
         setActionError(message);
@@ -712,10 +898,77 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       narrativeHistory,
       progressCompletedNodeIds,
       runtimeState,
+      mainMission,
+      adventureComplete,
+      finishAdventure,
       travelToLocation,
       appendSessionEvent,
     ],
   );
+
+  const buildSummaryStatsPayload = useCallback(() => {
+    const locationNames = sessionStats.locationsVisited
+      .map((id) => map?.nodes.find((n) => n.id === id)?.name)
+      .filter((name): name is string => Boolean(name));
+
+    return {
+      enemies_defeated: sessionStats.enemiesDefeated,
+      locations_visited: sessionStats.locationsVisited.length,
+      location_names: locationNames,
+      items_collected: sessionStats.itemsCollected,
+      hero_name: character?.name,
+      hero_class: character?.characterClass,
+      hero_race: character?.race,
+    };
+  }, [sessionStats, map, character]);
+
+  const generateAdventureSummary = useCallback(async (): Promise<AdventureSummaryData> => {
+    if (!character) {
+      throw new Error("No character loaded.");
+    }
+
+    setIsGeneratingSummary(true);
+    setSummaryError(null);
+
+    try {
+      const summary = await apiFetch<AdventureSummaryData>("/game/summary", {
+        method: "POST",
+        body: JSON.stringify({
+          character,
+          session_log: narrativeHistory.map((m) => ({ role: m.role, text: m.text })),
+          stats: buildSummaryStatsPayload(),
+          end_reason: adventureEndReason,
+          main_mission: mainMission,
+          adventure_description: adventureDescription,
+          narrative_intro: narrativeIntro,
+          map_nodes:
+            map?.nodes.map((n) => ({
+              id: n.id,
+              name: n.name,
+              isGoal: n.isGoal ?? false,
+            })) ?? [],
+        }),
+      });
+
+      setAdventureSummary(summary);
+      return summary;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to generate summary.";
+      setSummaryError(message);
+      throw err;
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  }, [
+    character,
+    narrativeHistory,
+    buildSummaryStatsPayload,
+    adventureDescription,
+    narrativeIntro,
+    map,
+    adventureEndReason,
+    mainMission,
+  ]);
 
   useEffect(() => {
     if (sessionId) {
@@ -751,6 +1004,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setSessionId,
         narrativeIntro,
         adventureDescription,
+        mainMission,
         map,
         currentNodeId,
         narrativeHistory,
@@ -769,12 +1023,19 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         eventLogMinimized,
         setEventLogVisible,
         setEventLogMinimized,
+        sessionStats,
+        adventureComplete,
+        adventureEndReason,
+        adventureSummary,
+        isGeneratingSummary,
+        summaryError,
         setAdventureData,
         updateMap,
         clearAdventureData,
         enterLocation,
         travelToLocation,
         submitAction,
+        generateAdventureSummary,
         clearAnimateMessage,
         isLoading,
       }}
