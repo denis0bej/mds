@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useGame } from "@/context/GameContext";
+import { useGame, type GameMap, type MainMission } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
 
 const LOADING_MESSAGES = [
@@ -73,8 +73,8 @@ const AdventureSetup = () => {
     try {
       const data = await apiFetch<{
         narrativeIntro: string;
-        map: any;
-        mainMission: any;
+        map: GameMap;
+        mainMission: MainMission;
         session_id?: string;
       }>("/adventure/generate", {
         method: "POST",
