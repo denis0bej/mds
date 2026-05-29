@@ -57,6 +57,10 @@ class CharacterData(BaseModel):
     characterClass: str
     backstory: str
     stats: dict
+    avatar: Optional[str] = None
+
+class CharacterAvatarUpdate(BaseModel):
+    avatar: str
 
 class AdventureRequest(BaseModel):
     description: str
@@ -287,6 +291,23 @@ async def get_character(session_id: str):
             data = json.load(f)
         return {"character": data}
     raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.patch("/character/{session_id}/avatar")
+async def update_character_avatar(session_id: str, body: CharacterAvatarUpdate):
+    file_path = f"data/{session_id}.json"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    with open(file_path, "r") as f:
+        data = json.load(f)
+
+    data["avatar"] = body.avatar
+
+    with open(file_path, "w") as f:
+        json.dump(data, f)
+
+    return {"character": data}
 
 @router.post("/adventure/generate-concept")
 async def generate_adventure_concept(req: GenerateConceptRequest):

@@ -94,8 +94,9 @@ const AdventureSummary = () => {
       narrative: adventureSummary.narrative,
       stats: stats.map(({ label, value }) => ({ label, value })),
       heroName: character?.name,
+      avatar: character?.avatar ?? undefined,
     };
-  }, [adventureSummary, title, subtitle, stats, character?.name]);
+  }, [adventureSummary, title, subtitle, stats, character?.name, character?.avatar]);
 
   const handleDownloadTxt = () => {
     if (!exportPayload) return;
