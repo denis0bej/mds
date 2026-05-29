@@ -11,6 +11,7 @@ type EventLogProps = {
   minimized: boolean;
   onToggleVisible: () => void;
   onToggleMinimized: () => void;
+  className?: string;
 };
 
 export function EventLog({
@@ -19,6 +20,7 @@ export function EventLog({
   minimized,
   onToggleVisible,
   onToggleMinimized,
+  className,
 }: EventLogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -32,7 +34,10 @@ export function EventLog({
       <button
         type="button"
         onClick={onToggleVisible}
-        className="mt-3 flex items-center gap-2 text-xs font-display uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
+        className={cn(
+          "flex items-center gap-2 text-xs font-display uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors border border-gold/25 rounded-sm px-3 py-2 bg-card/60 hover:bg-card/80 self-end",
+          className,
+        )}
       >
         <ScrollText className="h-3.5 w-3.5" />
         Show session log ({events.length})
@@ -44,7 +49,10 @@ export function EventLog({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-3 border border-gold/30 rounded-sm bg-card/80 overflow-hidden flex flex-col"
+      className={cn(
+        "border border-gold/30 rounded-sm bg-card/80 overflow-hidden flex flex-col shrink-0 w-full",
+        className,
+      )}
       style={{ maxHeight: minimized ? undefined : "220px" }}
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-gold/20 bg-card/90 shrink-0">
