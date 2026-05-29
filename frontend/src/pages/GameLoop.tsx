@@ -1,6 +1,6 @@
 import { useState, FormEvent, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Compass, Footprints, Trophy, Skull, Target } from "lucide-react";
+import { Compass, Footprints, Trophy, Skull } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useGame, getAvailableTravelDestinations } from "@/context/GameContext";
 import { NarrationPanel } from "@/components/NarrationPanel";
@@ -155,20 +155,9 @@ const GameLoop = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-6rem)]"
+      className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-6.5rem)]"
     >
-      <div className="lg:w-[60%] flex flex-col lg:min-h-0 lg:overflow-y-auto">
-        {mainMission && !adventureComplete && (
-          <div className="mb-4 bg-card/60 border border-gold/30 rounded-sm px-4 py-3">
-            <p className="font-display text-[10px] uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
-              <Target className="h-3 w-3" />
-              Main Mission — {mainMission.type}
-            </p>
-            <p className="font-body text-sm text-foreground/90">{mainMission.title}</p>
-            <p className="font-body text-xs text-muted-foreground mt-1">Target: {mainMission.target}</p>
-          </div>
-        )}
-
+      <div className="lg:w-[60%] flex flex-col lg:min-h-0">
         <NarrationPanel
           messages={narrativeHistory}
           animateMessageId={animateMessageId}
@@ -186,7 +175,7 @@ const GameLoop = () => {
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-4 victory-panel px-5 py-5 text-center"
+            className="mt-4 victory-panel px-5 py-5 text-center shrink-0"
           >
             {endIcon}
             <h2 className="font-display text-xl text-primary text-gold-glow tracking-wider mb-2">
@@ -209,7 +198,7 @@ const GameLoop = () => {
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-4 bg-card/60 border border-gold/30 rounded-sm px-4 py-3"
+            className="mt-4 bg-card/60 border border-gold/30 rounded-sm px-4 py-3 shrink-0"
           >
             <p className="font-display text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
               You might...
@@ -235,7 +224,7 @@ const GameLoop = () => {
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-4 bg-card/60 border border-emerald-500/30 rounded-sm px-4 py-3"
+            className="mt-4 bg-card/60 border border-emerald-500/30 rounded-sm px-4 py-3 shrink-0"
           >
             <p className="font-display text-[10px] uppercase tracking-wider text-emerald-400/80 mb-2">
               Where do you go?
@@ -262,7 +251,7 @@ const GameLoop = () => {
         )}
 
         {!adventureComplete && (
-          <form onSubmit={handleSubmit} className="border-t border-gold pt-4 mt-4">
+          <form onSubmit={handleSubmit} className="border-t border-gold pt-4 mt-4 shrink-0">
             <label className="font-display text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
               What do you do?
             </label>
@@ -298,8 +287,8 @@ const GameLoop = () => {
             </p>
           </form>
         )}
-
       </div>
+
 
       <div className="lg:w-[40%] flex flex-col gap-4 lg:min-h-0">
         <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto">

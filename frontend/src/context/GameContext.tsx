@@ -803,9 +803,9 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     [user, activeSaveId, switchToSave, startNewCharacter],
   );
 
-  const clearAnimateMessage = () => {
+  const clearAnimateMessage = useCallback(() => {
     setAnimateMessageId(null);
-  };
+  }, []);
 
   const enterLocation = useCallback(
     async (nodeId: string, travelPrompt?: string) => {
