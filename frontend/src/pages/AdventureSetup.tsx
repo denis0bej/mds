@@ -24,7 +24,7 @@ const PLACEHOLDER_SUGGESTIONS = [
 
 const AdventureSetup = () => {
   const navigate = useNavigate();
-  const { character, sessionId, setSessionId, setAdventureData } = useGame();
+  const { character, setAdventureData } = useGame();
   const [adventureText, setAdventureText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState(0);
@@ -67,7 +67,6 @@ const AdventureSetup = () => {
     setError(null);
 
     const body: Record<string, unknown> = { description: adventureText.trim() };
-    if (sessionId) body.session_id = sessionId;
     if (character) body.character = character;
 
     try {
@@ -96,9 +95,6 @@ const AdventureSetup = () => {
       }
 
       setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
-      if (data.session_id && !sessionId) {
-        setSessionId(data.session_id);
-      }
       navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -112,7 +108,7 @@ const AdventureSetup = () => {
     }
   };
 
-  if (!character && !sessionId) {
+  if (!character) {
     return (
       <div className="max-w-3xl mx-auto py-12">
         <div className="narrative-panel text-center">
