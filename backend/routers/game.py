@@ -19,6 +19,8 @@ from prompts import (
     DM_ACTION_SYSTEM_PROMPT,
     WORLD_ARCHITECT_SYSTEM_PROMPT,
     ENCOUNTER_PRESENTATION_SYSTEM_PROMPT,
+    GENERATE_BACKSTORY_PROMPT,
+    GENERATE_ADVENTURE_CONCEPT_PROMPT,
 )
 
 load_dotenv()
@@ -74,6 +76,32 @@ class GameActionRequest(BaseModel):
     adventure_description: Optional[str] = None
     recent_history: Optional[List[HistoryMessage]] = []
     game_state: Optional[dict] = None
+
+
+class GenerateBackstoryRequest(BaseModel):
+    name: Optional[str] = None
+    race: Optional[str] = None
+    characterClass: Optional[str] = None
+
+
+class GenerateConceptRequest(BaseModel):
+    character: Optional[dict] = None
+
+
+def _call_json_llm(system_prompt: str, user_content: str) -> dict:
+    response = get_openai_client().chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid AI response format.")
 
 
 def _format_history(recent_history: Optional[List[HistoryMessage]]) -> str:
@@ -178,6 +206,30 @@ async def save_character(char: CharacterData):
         json.dump(char.model_dump(), f)
     return {"session_id": session_id, "character": char.model_dump()}
 
+@router.post("/character/generate-backstory")
+async def generate_backstory(req: GenerateBackstoryRequest):
+    parts = []
+    if req.name:
+        parts.append(f"Name: {req.name}")
+    if req.race:
+        parts.append(f"Race: {req.race}")
+    if req.characterClass:
+        parts.append(f"Class: {req.characterClass}")
+    user_content = "\n".join(parts) if parts else "Create a generic heroic fantasy backstory."
+
+    try:
+        data = _call_json_llm(GENERATE_BACKSTORY_PROMPT, user_content)
+        backstory = (data.get("backstory") or "").strip()
+        if len(backstory) < 10:
+            raise HTTPException(status_code=500, detail="Generated backstory was too short.")
+        return {"backstory": backstory}
+    except openai.APITimeoutError:
+        raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Backstory generation failed", "detail": str(e)})
+
 @router.get("/character/{session_id}")
 async def get_character(session_id: str):
     file_path = f"data/{session_id}.json"
@@ -186,6 +238,25 @@ async def get_character(session_id: str):
             data = json.load(f)
         return {"character": data}
     raise HTTPException(status_code=404, detail="Session not found")
+
+@router.post("/adventure/generate-concept")
+async def generate_adventure_concept(req: GenerateConceptRequest):
+    user_content = "Create an adventure concept for a solo D&D player."
+    if req.character:
+        user_content += f"\n\nCharacter context:\n{json.dumps(req.character, ensure_ascii=False)}"
+
+    try:
+        data = _call_json_llm(GENERATE_ADVENTURE_CONCEPT_PROMPT, user_content)
+        concept = (data.get("concept") or "").strip()
+        if len(concept) < 20:
+            raise HTTPException(status_code=500, detail="Generated concept was too short.")
+        return {"concept": concept}
+    except openai.APITimeoutError:
+        raise HTTPException(status_code=504, detail="The Dungeon Master has fallen asleep. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": "Concept generation failed", "detail": str(e)})
 
 @router.post("/adventure/generate")
 async def generate_adventure(req: AdventureRequest):

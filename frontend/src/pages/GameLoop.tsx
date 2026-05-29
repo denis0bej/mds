@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useGame, getAvailableTravelDestinations } from "@/context/GameContext";
 import { NarrationPanel } from "@/components/NarrationPanel";
 import { CharacterPanel } from "@/components/CharacterPanel";
+import { EventLog } from "@/components/EventLog";
 import { DiceRoller, ROLL_DURATION_MS } from "@/components/DiceRoller";
 import { toRollCheck, toRollResult, type RollCheck, type RollResult } from "@/lib/dice";
 
@@ -33,6 +34,11 @@ const GameLoop = () => {
     lastCheck,
     runtimeState,
     progressCompletedNodeIds,
+    sessionEvents,
+    eventLogVisible,
+    eventLogMinimized,
+    setEventLogVisible,
+    setEventLogMinimized,
   } = useGame();
 
   const [actionInput, setActionInput] = useState("");
@@ -242,6 +248,14 @@ const GameLoop = () => {
             for discovered locations.
           </p>
         </form>
+
+        <EventLog
+          events={sessionEvents}
+          visible={eventLogVisible}
+          minimized={eventLogMinimized}
+          onToggleVisible={() => setEventLogVisible(!eventLogVisible)}
+          onToggleMinimized={() => setEventLogMinimized(!eventLogMinimized)}
+        />
       </div>
 
       <div className="lg:w-[40%] space-y-6">
