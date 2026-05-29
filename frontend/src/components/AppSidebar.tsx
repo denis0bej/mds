@@ -3,7 +3,6 @@ import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
 import { useGame } from "@/context/GameContext";
-import { SavePickerDialog } from "@/components/SavePickerDialog";
 import {
   Sidebar,
   SidebarContent,
@@ -32,14 +31,8 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const {
     startNewCharacter,
-    switchToSave,
-    deleteCharacterSave,
-    savesList,
-    activeSaveId,
-    isSwitchingSave,
     isLoading,
   } = useGame();
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   const handleNewCharacter = () => {
     if (!confirm("Start a new character? Your other heroes stay saved to your account.")) return;
@@ -92,34 +85,18 @@ export function AppSidebar() {
           <div className={`mt-auto px-2 pb-4 space-y-1 ${collapsed ? "flex flex-col items-center" : ""}`}>
             <button
               type="button"
-              onClick={() => setPickerOpen(true)}
+              onClick={handleNewCharacter}
               className={`${bottomLinkClass} ${collapsed ? "justify-center w-auto px-2" : ""}`}
-              title="Switch Character"
+              title="New Character"
             >
               <Users className="h-4 w-4 flex-shrink-0" />
               {!collapsed && (
-                <span className="font-display text-xs uppercase tracking-wider">Switch Character</span>
+                <span className="font-display text-xs uppercase tracking-wider">New Character</span>
               )}
             </button>
           </div>
         </SidebarContent>
       </Sidebar>
-
-      <SavePickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        saves={savesList}
-        activeSaveId={activeSaveId}
-        isLoading={isLoading}
-        isSwitching={isSwitchingSave}
-        onSelect={async (saveId) => {
-          await switchToSave(saveId);
-          setPickerOpen(false);
-          navigate("/");
-        }}
-        onDelete={deleteCharacterSave}
-        onNewCharacter={handleNewCharacter}
-      />
     </>
   );
 }
