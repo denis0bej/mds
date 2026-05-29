@@ -43,6 +43,7 @@ const GameLoop = () => {
     adventureComplete,
     adventureEndReason,
     mainMission,
+    updateCharacterAvatar,
   } = useGame();
 
   const navigate = useNavigate();
@@ -301,7 +302,11 @@ const GameLoop = () => {
       </div>
 
       <div className="lg:w-[40%] flex flex-col min-h-0">
-        <CharacterPanel character={character} runtimeState={runtimeState} />
+        <CharacterPanel
+          character={character}
+          runtimeState={runtimeState}
+          onAvatarChange={(avatar) => updateCharacterAvatar(avatar).catch(() => {})}
+        />
 
         <div className="flex-1 flex flex-col justify-end gap-4 min-h-0 mt-6">
           <AnimatePresence>

@@ -9,6 +9,7 @@ export type SummaryExportPayload = {
   narrative: string;
   stats: SummaryStat[];
   heroName?: string;
+  avatar?: string;
 };
 
 function slugify(value: string): string {
@@ -74,6 +75,16 @@ export async function downloadSummaryPdf(payload: SummaryExportPayload): Promise
     doc.addPage();
     y = margin;
   };
+
+  if (payload.avatar) {
+    const avatarSize = 72;
+    const avatarX = (pageWidth - avatarSize) / 2;
+    const format = payload.avatar.startsWith("data:image/png") ? "PNG" : "JPEG";
+
+    ensureSpace(avatarSize + 20);
+    doc.addImage(payload.avatar, format, avatarX, y, avatarSize, avatarSize);
+    y += avatarSize + 20;
+  }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);

@@ -58,6 +58,7 @@ export interface CharacterData {
   characterClass: string;
   backstory: string;
   stats: CharacterStats;
+  avatar?: string;
 }
 
 export type SceneType =
@@ -391,6 +392,7 @@ interface GameState {
   travelToLocation: (nodeId: string, prompt: string) => Promise<void>;
   submitAction: (action: string) => Promise<void>;
   generateAdventureSummary: () => Promise<AdventureSummaryData>;
+  updateCharacterAvatar: (avatar: string) => Promise<void>;
   clearAnimateMessage: () => void;
   isLoading: boolean;
 }
@@ -982,6 +984,25 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     mainMission,
   ]);
 
+  const updateCharacterAvatar = useCallback(
+    async (avatar: string) => {
+      if (!sessionId || !character) {
+        throw new Error("No character session to update.");
+      }
+
+      const result = await apiFetch<{ character: CharacterData }>(
+        `/character/${sessionId}/avatar`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ avatar }),
+        },
+      );
+
+      setCharacter(result.character);
+    },
+    [sessionId, character],
+  );
+
   useEffect(() => {
     if (sessionId) {
       localStorage.setItem("dnd_session_id", sessionId);
@@ -1050,6 +1071,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         travelToLocation,
         submitAction,
         generateAdventureSummary,
+        updateCharacterAvatar,
         clearAnimateMessage,
         isLoading,
       }}
