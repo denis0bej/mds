@@ -392,6 +392,7 @@ interface GameState {
   submitAction: (action: string) => Promise<void>;
   generateAdventureSummary: () => Promise<AdventureSummaryData>;
   clearAnimateMessage: () => void;
+  startNewCharacter: () => void;
   isLoading: boolean;
 }
 
@@ -613,6 +614,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const clearAnimateMessage = () => {
     setAnimateMessageId(null);
   };
+
+  const startNewCharacter = useCallback(() => {
+    clearAdventureData();
+    setCharacter(null);
+    setSessionId(null);
+    localStorage.removeItem("dnd_session_id");
+  }, []);
 
   const enterLocation = useCallback(
     async (nodeId: string, travelPrompt?: string) => {
@@ -1046,6 +1054,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setAdventureData,
         updateMap,
         clearAdventureData,
+        startNewCharacter,
         enterLocation,
         travelToLocation,
         submitAction,
