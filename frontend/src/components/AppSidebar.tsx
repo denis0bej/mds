@@ -1,4 +1,4 @@
-import { Shield, Compass, Map, BookOpen, Trophy, Users } from "lucide-react";
+import { Shield, Compass, Map, BookOpen, Trophy, Users, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useNavigate } from "react-router-dom";
@@ -22,6 +22,9 @@ const items = [
   { title: "Game", url: "/game", icon: BookOpen },
   { title: "Summary", url: "/summary", icon: Trophy },
 ];
+
+const bottomLinkClass =
+  "flex items-center gap-3 px-3 py-2.5 rounded-sm text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-200 w-full";
 
 export function AppSidebar() {
   const { state } = useSidebar();
@@ -86,17 +89,27 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <div className={`mt-auto px-2 pb-4 ${collapsed ? "flex justify-center" : ""}`}>
+          <div className={`mt-auto px-2 pb-4 space-y-1 ${collapsed ? "flex flex-col items-center" : ""}`}>
+            <NavLink
+              to="/past-adventures"
+              className={`${bottomLinkClass} ${collapsed ? "justify-center w-auto px-2" : ""}`}
+              activeClassName="text-primary bg-primary/10"
+              title="Past Adventures"
+            >
+              <ScrollText className="h-4 w-4 flex-shrink-0" />
+              {!collapsed && (
+                <span className="font-display text-xs uppercase tracking-wider">Past Adventures</span>
+              )}
+            </NavLink>
             <button
+              type="button"
               onClick={() => setPickerOpen(true)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-sm text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors duration-200 w-full ${collapsed ? "justify-center" : ""}`}
+              className={`${bottomLinkClass} ${collapsed ? "justify-center w-auto px-2" : ""}`}
               title="Switch Character"
             >
               <Users className="h-4 w-4 flex-shrink-0" />
               {!collapsed && (
-                <span className="font-display text-xs uppercase tracking-wider">
-                  Switch Character
-                </span>
+                <span className="font-display text-xs uppercase tracking-wider">Switch Character</span>
               )}
             </button>
           </div>

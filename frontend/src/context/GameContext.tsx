@@ -10,12 +10,15 @@ import React, {
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import {
+  appendPastAdventure,
   createEmptySaveData,
   createSave,
   deleteSave,
   fetchLegacyCharacter,
   fetchSave,
+  isAdventureArchived,
   listSaves,
+  mergePastAdventures,
   readLocalLegacyState,
   clearLocalLegacyState,
   setActiveSave,
@@ -24,6 +27,10 @@ import {
   type GameSaveSummary,
   type SaveData,
 } from "@/lib/gameSaves";
+import {
+  createPastAdventureArchive,
+  type PastAdventureArchive,
+} from "@/lib/pastAdventures";
 import type { NarrativeMessage } from "@/components/NarrationPanel";
 import {
   applyAutoHealingPotion,
@@ -380,6 +387,7 @@ interface GameState {
   ) => void;
   updateMap: (mapData: GameMap) => void;
   clearAdventureData: () => void;
+  beginNextAdventure: () => Promise<void>;
   enterLocation: (nodeId: string, travelPrompt?: string) => Promise<void>;
   travelToLocation: (nodeId: string, prompt: string) => Promise<void>;
   submitAction: (action: string) => Promise<void>;
@@ -431,10 +439,16 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryDownloaded, setSummaryDownloaded] = useState(false);
+  const [pastAdventures, setPastAdventures] = useState<PastAdventureArchive[]>([]);
+  const [activeAdventureId, setActiveAdventureId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
   const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveInFlightRef = useRef<Promise<void> | null>(null);
   const characterRef = useRef<CharacterData | null>(null);
+  const pastAdventuresRef = useRef<PastAdventureArchive[]>([]);
+  const activeAdventureIdRef = useRef<string | null>(null);
+  const persistLockRef = useRef(false);
   const [eventLogVisible, setEventLogVisibleState] = useState(loadEventLogVisible);
   const [eventLogMinimized, setEventLogMinimized] = useState(false);
 
@@ -445,6 +459,27 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     characterRef.current = character;
   }, [character]);
+
+  useEffect(() => {
+    pastAdventuresRef.current = pastAdventures;
+  }, [pastAdventures]);
+
+  useEffect(() => {
+    activeAdventureIdRef.current = activeAdventureId;
+  }, [activeAdventureId]);
+
+  const cancelAutosave = useCallback(() => {
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  }, []);
+
+  const awaitPendingAutosave = useCallback(async () => {
+    if (autosaveInFlightRef.current) {
+      await autosaveInFlightRef.current;
+    }
+  }, []);
 
   const markSummaryDownloaded = useCallback(() => {
     setSummaryDownloaded(true);
@@ -471,6 +506,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       adventureEndReason,
       adventureSummary,
       summaryDownloaded,
+      pastAdventures: pastAdventuresRef.current,
+      activeAdventureId: activeAdventureIdRef.current,
     };
   }, [
     narrativeIntro,
@@ -510,6 +547,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureEndReason(data.adventureEndReason);
     setAdventureSummary(data.adventureSummary);
     setSummaryDownloaded(data.summaryDownloaded ?? false);
+    setPastAdventures(data.pastAdventures ?? []);
+    setActiveAdventureId(data.activeAdventureId ?? null);
+    pastAdventuresRef.current = data.pastAdventures ?? [];
+    activeAdventureIdRef.current = data.activeAdventureId ?? null;
     setCurrentEncounter(null);
     setAnimateMessageId(null);
     setLastRoll(null);
@@ -600,17 +641,42 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     }
 
     autosaveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+      const task = (async () => {
+        if (persistLockRef.current) return;
+
         const latestCharacter = characterRef.current;
-        if (!latestCharacter) return;
+        if (!latestCharacter || !activeSaveId) return;
 
         try {
-          await updateSave(activeSaveId, latestCharacter, buildSaveData());
+          let saveData = buildSaveData();
+          if (persistLockRef.current) return;
+
+          const latest = await fetchSave(activeSaveId);
+          if (persistLockRef.current) return;
+
+          const mergedPast = mergePastAdventures(
+            saveData.pastAdventures,
+            latest.save_data.pastAdventures,
+          );
+          if (mergedPast.length !== saveData.pastAdventures.length) {
+            saveData = { ...saveData, pastAdventures: mergedPast };
+            pastAdventuresRef.current = mergedPast;
+            setPastAdventures(mergedPast);
+          }
+
+          await updateSave(activeSaveId, latestCharacter, saveData);
           await refreshSavesList(user.id);
         } catch (err) {
           console.error("Autosave failed:", err);
         }
       })();
+
+      autosaveInFlightRef.current = task;
+      void task.finally(() => {
+        if (autosaveInFlightRef.current === task) {
+          autosaveInFlightRef.current = null;
+        }
+      });
     }, 1200);
 
     return () => {
@@ -639,6 +705,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     adventureComplete,
     adventureEndReason,
     adventureSummary,
+    summaryDownloaded,
   ]);
 
   useEffect(() => {
@@ -696,6 +763,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     mission: MainMission | null = null,
   ) => {
     if (!mapData?.nodes) return;
+    const nextAdventureId = crypto.randomUUID();
     const startNodeId = mapData.nodes.find((n) => n.status === "current")?.id ?? null;
     const initialStats = startNodeId
       ? recordLocationVisit(createInitialSessionStats(), startNodeId)
@@ -725,6 +793,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureSummary(null);
     setSummaryError(null);
     setSummaryDownloaded(false);
+    setActiveAdventureId(nextAdventureId);
+    activeAdventureIdRef.current = nextAdventureId;
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -751,7 +821,125 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureSummary(null);
     setSummaryError(null);
     setSummaryDownloaded(false);
+    setActiveAdventureId(null);
+    activeAdventureIdRef.current = null;
   };
+
+  const archiveCurrentAdventure = useCallback(
+    async (summary: AdventureSummaryData | null) => {
+      if (!character || !user || !activeSaveId || !adventureComplete) return;
+
+      cancelAutosave();
+      await awaitPendingAutosave();
+      persistLockRef.current = true;
+
+      try {
+        const adventureId = activeAdventureIdRef.current ?? crypto.randomUUID();
+        const baseSaveData = buildSaveData();
+
+        if (isAdventureArchived(baseSaveData, adventureId)) return;
+
+        const archive = createPastAdventureArchive({
+          id: adventureId,
+          completedAt: new Date().toISOString(),
+          endReason: adventureEndReason ?? "victory",
+          adventureDescription,
+          mainMission,
+          narrativeIntro,
+          summary,
+          sessionStats,
+          sessionEvents,
+          narrativeHistory,
+          map,
+          progressCompletedNodeIds,
+          characterSnapshot: character,
+          runtimeState,
+        });
+
+        const updatedSaveData = appendPastAdventure(
+          { ...baseSaveData, adventureSummary: summary, activeAdventureId: adventureId },
+          archive,
+        );
+
+        pastAdventuresRef.current = updatedSaveData.pastAdventures;
+        activeAdventureIdRef.current = adventureId;
+        setPastAdventures(updatedSaveData.pastAdventures);
+        setActiveAdventureId(adventureId);
+        setAdventureSummary(summary);
+
+        await updateSave(activeSaveId, character, updatedSaveData);
+        await refreshSavesList(user.id);
+      } finally {
+        persistLockRef.current = false;
+      }
+    },
+    [
+      character,
+      user,
+      activeSaveId,
+      adventureComplete,
+      cancelAutosave,
+      awaitPendingAutosave,
+      buildSaveData,
+      adventureEndReason,
+      adventureDescription,
+      mainMission,
+      narrativeIntro,
+      sessionStats,
+      sessionEvents,
+      narrativeHistory,
+      map,
+      progressCompletedNodeIds,
+      runtimeState,
+      refreshSavesList,
+    ],
+  );
+
+  const beginNextAdventure = useCallback(async () => {
+    if (!user || !activeSaveId || !character) {
+      clearAdventureData();
+      return;
+    }
+
+    cancelAutosave();
+    await awaitPendingAutosave();
+    persistLockRef.current = true;
+
+    try {
+      if (adventureComplete && adventureSummary) {
+        await archiveCurrentAdventure(adventureSummary);
+      }
+
+      const latest = await fetchSave(activeSaveId);
+      const preservedPast = latest.save_data.pastAdventures;
+
+      clearAdventureData();
+
+      const saveData: SaveData = {
+        ...createEmptySaveData(),
+        pastAdventures: preservedPast,
+        activeAdventureId: null,
+      };
+
+      pastAdventuresRef.current = preservedPast;
+      activeAdventureIdRef.current = null;
+      setPastAdventures(preservedPast);
+      await updateSave(activeSaveId, character, saveData);
+      await refreshSavesList(user.id);
+    } finally {
+      persistLockRef.current = false;
+    }
+  }, [
+    user,
+    activeSaveId,
+    character,
+    adventureComplete,
+    adventureSummary,
+    archiveCurrentAdventure,
+    cancelAutosave,
+    awaitPendingAutosave,
+    refreshSavesList,
+  ]);
 
   const startNewCharacter = useCallback(() => {
     setIsDraftingNewCharacter(true);
@@ -1165,6 +1353,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setAdventureSummary(summary);
+      await archiveCurrentAdventure(summary);
       return summary;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate summary.";
@@ -1182,6 +1371,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     map,
     adventureEndReason,
     mainMission,
+    archiveCurrentAdventure,
   ]);
 
   const updateCharacterAvatar = useCallback(
@@ -1246,6 +1436,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setAdventureData,
         updateMap,
         clearAdventureData,
+        beginNextAdventure,
         enterLocation,
         travelToLocation,
         submitAction,

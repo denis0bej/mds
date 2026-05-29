@@ -10,6 +10,7 @@ import AdventureSetup from "./pages/AdventureSetup";
 import MapView from "./pages/MapView";
 import GameLoop from "./pages/GameLoop";
 import AdventureSummary from "./pages/AdventureSummary";
+import PastAdventures from "./pages/PastAdventures";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import CreateAccount from "./pages/CreateAccount";
@@ -46,6 +47,7 @@ const App = () => {
                   <Route path="/map" element={<MapView />} />
                   <Route path="/game" element={<GameLoop />} />
                   <Route path="/summary" element={<AdventureSummary />} />
+                  <Route path="/past-adventures" element={<PastAdventures />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Route>

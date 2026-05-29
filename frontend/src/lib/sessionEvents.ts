@@ -85,6 +85,19 @@ export function formatEventTime(timestamp: number): string {
   });
 }
 
+export function formatEventMeta(meta: SessionEvent["meta"]): string | null {
+  if (!meta) return null;
+  const parts: string[] = [];
+  if (meta.d20 != null) parts.push(`d20: ${meta.d20}`);
+  if (meta.total != null) parts.push(`total: ${meta.total}`);
+  if (meta.dc != null) parts.push(`DC ${meta.dc}`);
+  if (meta.outcome) parts.push(meta.outcome);
+  if (meta.hpDelta != null && meta.hpDelta !== 0) {
+    parts.push(`HP ${meta.hpDelta > 0 ? "+" : ""}${meta.hpDelta}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 export function formatStateChangeSummary(changes: StateChanges): string | null {
   const parts: string[] = [];
 

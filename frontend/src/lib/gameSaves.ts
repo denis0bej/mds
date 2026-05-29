@@ -9,6 +9,7 @@ import type {
 import type { GameRuntimeState } from "@/lib/gameState";
 import { createInitialSessionStats, type SessionStats } from "@/lib/sessionStats";
 import type { SessionEvent } from "@/lib/sessionEvents";
+import type { PastAdventureArchive } from "@/lib/pastAdventures";
 import { supabase } from "@/lib/supabase";
 
 export type SaveData = {
@@ -26,6 +27,8 @@ export type SaveData = {
   adventureEndReason: AdventureEndReason | null;
   adventureSummary: AdventureSummaryData | null;
   summaryDownloaded: boolean;
+  pastAdventures: PastAdventureArchive[];
+  activeAdventureId: string | null;
 };
 
 export type GameSaveRow = {
@@ -68,6 +71,8 @@ export function createEmptySaveData(): SaveData {
     adventureEndReason: null,
     adventureSummary: null,
     summaryDownloaded: false,
+    pastAdventures: [],
+    activeAdventureId: null,
   };
 }
 
@@ -83,7 +88,40 @@ function normalizeSaveData(raw: Partial<SaveData> | null | undefined): SaveData 
     progressCompletedNodeIds: Array.isArray(raw.progressCompletedNodeIds)
       ? raw.progressCompletedNodeIds
       : base.progressCompletedNodeIds,
+    pastAdventures: Array.isArray(raw.pastAdventures) ? raw.pastAdventures : base.pastAdventures,
+    activeAdventureId: raw.activeAdventureId ?? base.activeAdventureId,
   };
+}
+
+export function isAdventureArchived(saveData: SaveData, adventureId: string | null): boolean {
+  if (!adventureId) return false;
+  return saveData.pastAdventures.some((entry) => entry.id === adventureId);
+}
+
+export function appendPastAdventure(
+  saveData: SaveData,
+  archive: PastAdventureArchive,
+): SaveData {
+  if (saveData.pastAdventures.some((entry) => entry.id === archive.id)) {
+    return saveData;
+  }
+  return {
+    ...saveData,
+    pastAdventures: [archive, ...saveData.pastAdventures],
+  };
+}
+
+/** Union by id so concurrent autosave cannot drop archives already in Supabase. */
+export function mergePastAdventures(
+  local: PastAdventureArchive[],
+  remote: PastAdventureArchive[],
+): PastAdventureArchive[] {
+  const byId = new Map<string, PastAdventureArchive>();
+  for (const entry of remote) byId.set(entry.id, entry);
+  for (const entry of local) byId.set(entry.id, entry);
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+  );
 }
 
 function getSavePhase(saveData: SaveData): GameSaveSummary["phase"] {
