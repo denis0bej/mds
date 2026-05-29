@@ -161,6 +161,7 @@ type PersistedAdventure = {
   adventureComplete: boolean;
   adventureEndReason: AdventureEndReason | null;
   adventureSummary: AdventureSummaryData | null;
+  summaryDownloaded: boolean;
 };
 
 export type AdventureSummaryData = {
@@ -376,6 +377,8 @@ interface GameState {
   adventureSummary: AdventureSummaryData | null;
   isGeneratingSummary: boolean;
   summaryError: string | null;
+  summaryDownloaded: boolean;
+  markSummaryDownloaded: () => void;
   setAdventureData: (
     intro: string,
     mapData: GameMap | null,
@@ -435,6 +438,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   );
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryDownloaded, setSummaryDownloaded] = useState(persisted?.summaryDownloaded ?? false);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>(() => {
     if (persisted?.sessionEvents?.length) return persisted.sessionEvents;
@@ -448,6 +452,10 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
 
   const appendSessionEvent = useCallback((event: SessionEvent) => {
     setSessionEvents((prev) => [...prev, event]);
+  }, []);
+
+  const markSummaryDownloaded = useCallback(() => {
+    setSummaryDownloaded(true);
   }, []);
 
   const setEventLogVisible = useCallback((visible: boolean) => {
@@ -470,6 +478,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       adventureComplete,
       adventureEndReason,
       adventureSummary,
+      summaryDownloaded,
     });
   }, [
     narrativeIntro,
@@ -485,6 +494,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     adventureComplete,
     adventureEndReason,
     adventureSummary,
+    summaryDownloaded,
   ]);
 
   useEffect(() => {
@@ -570,6 +580,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureEndReason(null);
     setAdventureSummary(null);
     setSummaryError(null);
+    setSummaryDownloaded(false);
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -595,6 +606,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureEndReason(null);
     setAdventureSummary(null);
     setSummaryError(null);
+    setSummaryDownloaded(false);
     localStorage.removeItem(ADVENTURE_STORAGE_KEY);
   };
 
@@ -1029,6 +1041,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         adventureSummary,
         isGeneratingSummary,
         summaryError,
+        summaryDownloaded,
+        markSummaryDownloaded,
         setAdventureData,
         updateMap,
         clearAdventureData,

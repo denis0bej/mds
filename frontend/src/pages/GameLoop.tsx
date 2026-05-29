@@ -298,27 +298,30 @@ const GameLoop = () => {
           </form>
         )}
 
-        <EventLog
-          events={sessionEvents}
-          visible={eventLogVisible}
-          minimized={eventLogMinimized}
-          onToggleVisible={() => setEventLogVisible(!eventLogVisible)}
-          onToggleMinimized={() => setEventLogMinimized(!eventLogMinimized)}
-        />
       </div>
 
-      <div className="lg:w-[40%] space-y-6">
+      <div className="lg:w-[40%] flex flex-col min-h-0">
         <CharacterPanel character={character} runtimeState={runtimeState} />
 
-        <AnimatePresence>
-          {diceUi && !adventureComplete && (
-            <DiceRoller
-              check={diceUi.check}
-              result={diceUi.result}
-              isRolling={diceUi.isRolling}
-            />
-          )}
-        </AnimatePresence>
+        <div className="flex-1 flex flex-col justify-end gap-4 min-h-0 mt-6">
+          <AnimatePresence>
+            {diceUi && !adventureComplete && (
+              <DiceRoller
+                check={diceUi.check}
+                result={diceUi.result}
+                isRolling={diceUi.isRolling}
+              />
+            )}
+          </AnimatePresence>
+
+          <EventLog
+            events={sessionEvents}
+            visible={eventLogVisible}
+            minimized={eventLogMinimized}
+            onToggleVisible={() => setEventLogVisible(!eventLogVisible)}
+            onToggleMinimized={() => setEventLogMinimized(!eventLogMinimized)}
+          />
+        </div>
       </div>
     </motion.div>
   );

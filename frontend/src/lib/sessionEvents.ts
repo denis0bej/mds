@@ -132,9 +132,9 @@ export function backfillEventsFromHistory(history: NarrativeMessage[]): SessionE
 export function loadEventLogVisible(): boolean {
   try {
     const raw = localStorage.getItem(EVENT_LOG_VISIBLE_KEY);
-    return raw === null ? true : raw === "true";
+    return raw === null ? false : raw === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
