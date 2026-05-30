@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/tooltip";
 import type { CharacterData } from "@/context/GameContext";
 import type { GameRuntimeState, InventoryItem, StatusEffect } from "@/lib/gameState";
+import { CharacterAvatarPicker } from "@/components/CharacterAvatarPicker";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   sword: Sword,
@@ -49,9 +50,10 @@ function getEffectIcon(effect: StatusEffect): LucideIcon {
 type CharacterPanelProps = {
   character: CharacterData | null;
   runtimeState: GameRuntimeState | null;
+  onAvatarChange?: (avatar: string) => void;
 };
 
-export function CharacterPanel({ character, runtimeState }: CharacterPanelProps) {
+export function CharacterPanel({ character, runtimeState, onAvatarChange }: CharacterPanelProps) {
   const prevHp = useRef<number | null>(null);
   const hpPulseKey = useRef(0);
 
@@ -78,6 +80,24 @@ export function CharacterPanel({ character, runtimeState }: CharacterPanelProps)
   return (
     <TooltipProvider delayDuration={200}>
       <div className="space-y-6">
+        {character && (
+          <div className="bg-card border border-gold rounded-sm p-4 flex items-center gap-4">
+            <CharacterAvatarPicker
+              avatar={character.avatar}
+              onAvatarChange={onAvatarChange}
+              editable={!!onAvatarChange}
+              size="sm"
+              label=""
+            />
+            <div className="min-w-0">
+              <p className="font-display text-sm text-primary truncate">{character.name}</p>
+              <p className="font-body text-xs text-muted-foreground truncate">
+                {character.race} {character.characterClass}
+              </p>
+            </div>
+          </div>
+        )}
+
         <motion.div
           key={hpPulseKey.current}
           initial={{ boxShadow: "0 0 0 0 hsl(var(--primary) / 0)" }}
@@ -122,11 +142,6 @@ export function CharacterPanel({ character, runtimeState }: CharacterPanelProps)
             <div className="text-xs text-muted-foreground">
               <span className="text-foreground font-display">Level:</span> {runtimeState.level}
             </div>
-            {character && (
-              <div className="text-xs text-muted-foreground truncate">
-                <span className="text-foreground font-display">Hero:</span> {character.name}
-              </div>
-            )}
           </div>
         </motion.div>
 

@@ -1,19 +1,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
+import { Sparkles, Hexagon, User, Sword, AlertTriangle, RefreshCw, Loader2, BookOpen, Map as MapIcon } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useGame, type GameMap, type MainMission } from "@/context/GameContext";
+import { useGame, type MainMission } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
-
-const LOADING_MESSAGES = [
-  "The Dungeon Master is consulting the stars...",
-  "Ancient runes are being deciphered...",
-  "The realm's map is taking shape...",
-  "Shadows gather at the edge of the known...",
-  "Your destiny is woven in silence...",
-  "Arcane forces answer the call...",
-  "The chronicles of fate are being written...",
-];
 
 const PLACEHOLDER_SUGGESTIONS = [
   "A dark quest through the Underdark, where ancient dwarven ruins hold the key to sealing a rift between planes...",
@@ -22,26 +12,119 @@ const PLACEHOLDER_SUGGESTIONS = [
   "A dragon's mountain stronghold where a stolen artifact must be reclaimed before the winter solstice...",
 ];
 
+function missionLabel(mission: MainMission | null): string | null {
+  if (!mission) return null;
+  return mission.title;
+}
+
+function AdventureConceptSheet({
+  concept,
+  intro,
+  mission,
+  locationCount,
+  adventureComplete,
+}: {
+  concept: string;
+  intro: string | null;
+  mission: MainMission | null;
+  locationCount: number;
+  adventureComplete: boolean;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="max-w-3xl mx-auto"
+    >
+      <h1 className="text-3xl font-display text-primary text-gold-glow mb-2 tracking-wider">
+        Your Quest
+      </h1>
+      <p className="text-muted-foreground font-body mb-6 text-sm italic">
+        This adventure has already been forged. Continue where you left off.
+      </p>
+
+      <div className="narrative-panel border-gold mb-6 space-y-4">
+        <div>
+          <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+            Adventure Concept
+          </p>
+          <p className="font-body text-foreground/90 leading-relaxed whitespace-pre-line">{concept}</p>
+        </div>
+
+        {mission && (
+          <div>
+            <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+              Main Mission
+            </p>
+            <p className="font-body text-foreground/90">{missionLabel(mission)}</p>
+          </div>
+        )}
+
+        {intro && (
+          <div>
+            <p className="font-display text-xs uppercase tracking-wider text-primary mb-2">
+              Opening
+            </p>
+            <p className="font-body text-foreground/80 text-sm leading-relaxed whitespace-pre-line line-clamp-6">
+              {intro}
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3 pt-2 border-t border-gold/20">
+          <span className="font-body text-xs text-muted-foreground">
+            {locationCount} locations mapped
+          </span>
+          {adventureComplete && (
+            <span className="font-display text-[10px] uppercase tracking-wider text-primary">
+              Completed
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <Link to="/game" className="btn-fantasy flex items-center gap-2 text-sm">
+          <BookOpen className="h-4 w-4" />
+          Continue Adventure
+        </Link>
+        <Link
+          to="/map"
+          className="flex items-center gap-2 px-4 py-2 rounded-sm border border-gold/50 font-display text-xs uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors"
+        >
+          <MapIcon className="h-4 w-4" />
+          View Map
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
 const AdventureSetup = () => {
   const navigate = useNavigate();
-  const { character, sessionId, setSessionId, setAdventureData } = useGame();
+  const {
+    character,
+    setAdventureData,
+    map,
+    adventureDescription,
+    narrativeIntro,
+    mainMission,
+    adventureComplete,
+  } = useGame();
   const [adventureText, setAdventureText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [loadingIndex, setLoadingIndex] = useState(0);
+  const [generationMessage, setGenerationMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [generateConceptError, setGenerateConceptError] = useState<string | null>(null);
   const [suggestionIndex] = useState(() => Math.floor(Math.random() * PLACEHOLDER_SUGGESTIONS.length));
 
   useEffect(() => {
-    let interval: number | undefined;
-    if (isLoading) {
-      interval = window.setInterval(() => {
-        setLoadingIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
-      }, 2500);
+    if (adventureDescription && !map) {
+      setAdventureText(adventureDescription);
     }
-    return () => clearInterval(interval);
-  }, [isLoading]);
+  }, [adventureDescription, map]);
 
   const handleGenerateConcept = async () => {
     setIsGeneratingConcept(true);
@@ -65,31 +148,64 @@ const AdventureSetup = () => {
 
     setIsLoading(true);
     setError(null);
+    setGenerationMessage("Initializing generation...");
 
     const body: Record<string, unknown> = { description: adventureText.trim() };
-    if (sessionId) body.session_id = sessionId;
     if (character) body.character = character;
 
     try {
-      const data = await apiFetch<{
-        narrativeIntro: string;
-        map: GameMap;
-        mainMission: MainMission;
-        session_id?: string;
-      }>("/adventure/generate", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || "http://localhost:8000"}/adventure/generate-stream`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
 
-      if (!data.map?.nodes?.length) {
-        throw new Error("The realm could not be mapped. The response was incomplete — please try again.");
+      if (!response.ok) {
+        throw new Error("Forces of darkness have blocked the transmission. Please try again.");
       }
 
-      setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
-      if (data.session_id && !sessionId) {
-        setSessionId(data.session_id);
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Could not start stream reader.");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.replace("data: ", "").trim();
+            if (!jsonStr) continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.status === "error") {
+                throw new Error(event.message);
+              }
+              if (event.status === "complete") {
+                const data = event.data;
+                setAdventureData(data.narrativeIntro, data.map, adventureText.trim(), data.mainMission ?? null);
+                navigate("/game");
+                return;
+              }
+              if (event.message) {
+                setGenerationMessage(event.message);
+              }
+            } catch (e) {
+              console.error("Error parsing SSE event:", e);
+            }
+          }
+        }
       }
-      navigate("/game");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
@@ -98,7 +214,7 @@ const AdventureSetup = () => {
     }
   };
 
-  if (!character && !sessionId) {
+  if (!character) {
     return (
       <div className="max-w-3xl mx-auto py-12">
         <div className="narrative-panel text-center">
@@ -111,6 +227,18 @@ const AdventureSetup = () => {
           </Link>
         </div>
       </div>
+    );
+  }
+
+  if (map && adventureDescription) {
+    return (
+      <AdventureConceptSheet
+        concept={adventureDescription}
+        intro={narrativeIntro}
+        mission={mainMission}
+        locationCount={map.nodes.length}
+        adventureComplete={adventureComplete}
+      />
     );
   }
 
@@ -242,14 +370,14 @@ const AdventureSetup = () => {
               </motion.div>
               <AnimatePresence mode="wait">
                 <motion.p
-                  key={loadingIndex}
+                  key={generationMessage}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.3 }}
                   className="font-body text-gold-glow text-sm text-center italic"
                 >
-                  {LOADING_MESSAGES[loadingIndex]}
+                  {generationMessage}
                 </motion.p>
               </AnimatePresence>
               <div className="flex gap-1 mt-1">

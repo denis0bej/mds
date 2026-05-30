@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import openai
@@ -28,6 +29,7 @@ from prompts import (
     GENERATE_BACKSTORY_PROMPT,
     GENERATE_ADVENTURE_CONCEPT_PROMPT,
     CHRONICLER_SYSTEM_PROMPT,
+    ADVENTURE_CRITIC_SYSTEM_PROMPT,
 )
 
 load_dotenv()
@@ -57,6 +59,10 @@ class CharacterData(BaseModel):
     characterClass: str
     backstory: str
     stats: dict
+    avatar: Optional[str] = None
+
+class CharacterAvatarUpdate(BaseModel):
+    avatar: str
 
 class AdventureRequest(BaseModel):
     description: str
@@ -288,6 +294,23 @@ async def get_character(session_id: str):
         return {"character": data}
     raise HTTPException(status_code=404, detail="Session not found")
 
+
+@router.patch("/character/{session_id}/avatar")
+async def update_character_avatar(session_id: str, body: CharacterAvatarUpdate):
+    file_path = f"data/{session_id}.json"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    with open(file_path, "r") as f:
+        data = json.load(f)
+
+    data["avatar"] = body.avatar
+
+    with open(file_path, "w") as f:
+        json.dump(data, f)
+
+    return {"character": data}
+
 @router.post("/adventure/generate-concept")
 async def generate_adventure_concept(req: GenerateConceptRequest):
     user_content = "Create an adventure concept for a solo D&D player."
@@ -307,6 +330,95 @@ async def generate_adventure_concept(req: GenerateConceptRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Concept generation failed", "detail": str(e)})
 
+@router.post("/adventure/generate-stream")
+async def generate_adventure_stream(req: AdventureRequest):
+    character_context = None
+    used_session_id = req.session_id
+
+    if req.session_id:
+        file_path = f"data/{req.session_id}.json"
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                character_context = json.load(f)
+        elif req.character:
+            character_context = req.character
+    elif req.character:
+        character_context = req.character
+    
+    user_content = f"Descriere aventură: {req.description}"
+    if character_context:
+        user_content += f"\n\nContext personaj: {json.dumps(character_context, ensure_ascii=False)}"
+    user_content += (
+        "\n\nReamintire: FIECARE nod TREBUIE să aibă câmpul \"content\" complet populat "
+        "(summary, scene_type, narrative_seed, elements cu mechanics, completion_conditions). "
+        "Nu omite acest câmp pentru niciun nod."
+    )
+
+    async def event_generator():
+        try:
+            # STEP 1: Draft Generation
+            yield f"data: {json.dumps({'status': 'drafting', 'message': 'The World Architect is drafting the initial map...'})}\n\n"
+            response = get_openai_client().chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ],
+                response_format={"type": "json_object"},
+                max_tokens=8192,
+                temperature=0.85,
+            )
+            raw_content = response.choices[0].message.content
+            adventure_data = json.loads(raw_content)
+
+            # STEP 2: Critique
+            yield f"data: {json.dumps({'status': 'critiquing', 'message': 'A Senior Designer is evaluating the balance and logic...'})}\n\n"
+            critique_response = get_openai_client().chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
+                ],
+                response_format={"type": "json_object"},
+            )
+            critique_data = json.loads(critique_response.choices[0].message.content)
+            
+            # STEP 3: Refinement (only if needed)
+            if critique_data.get("needs_revision"):
+                yield f"data: {json.dumps({'status': 'refining', 'message': 'Refining the adventure based on expert feedback...'})}\n\n"
+                refine_content = (
+                    f"Original Request: {req.description}\n\n"
+                    f"Your Initial Draft:\n{raw_content}\n\n"
+                    f"Feedback from Senior Designer:\n{critique_data.get('feedback')}\n\n"
+                    "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
+                )
+                final_response = get_openai_client().chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
+                        {"role": "user", "content": refine_content}
+                    ],
+                    response_format={"type": "json_object"},
+                )
+                adventure_data = json.loads(final_response.choices[0].message.content)
+            else:
+                yield f"data: {json.dumps({'status': 'polishing', 'message': 'Adventure is solid. Polishing the details...'})}\n\n"
+
+            normalized_map = _normalize_map(adventure_data.get("map"))
+            final_payload = {
+                "narrativeIntro": adventure_data.get("narrativeIntro"),
+                "map": normalized_map,
+                "mainMission": ensure_main_mission(adventure_data.get("mainMission"), (normalized_map or {}).get("nodes") or []),
+                "session_id": used_session_id
+            }
+
+            yield f"data: {json.dumps({'status': 'complete', 'data': final_payload})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 @router.post("/adventure/generate")
 async def generate_adventure(req: AdventureRequest):
     character_context = None
@@ -317,6 +429,8 @@ async def generate_adventure(req: AdventureRequest):
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
                 character_context = json.load(f)
+        elif req.character:
+            character_context = req.character
         else:
             raise HTTPException(status_code=404, detail="Session not found")
     elif req.character:
@@ -332,6 +446,8 @@ async def generate_adventure(req: AdventureRequest):
     )
 
     try:
+        # STEP 1: Draft Generation
+        print("🛠️  Agent Phase 1: World Architect drafting initial map...")
         response = get_openai_client().chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -342,16 +458,41 @@ async def generate_adventure(req: AdventureRequest):
             max_tokens=8192,
             temperature=0.85,
         )
-
         raw_content = response.choices[0].message.content
-        try:
-            adventure_data = json.loads(raw_content)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail={
-                "error": "Invalid map format",
-                "detail": "LLM returned non-parseable JSON",
-                "raw": raw_content[:500]
-            })
+        adventure_data = json.loads(raw_content)
+
+        # STEP 2: Critique
+        print("🧐  Agent Phase 2: Design Critic evaluating draft...")
+        critique_response = get_openai_client().chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
+                {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
+            ],
+            response_format={"type": "json_object"},
+        )
+        critique_data = json.loads(critique_response.choices[0].message.content)
+        
+        # STEP 3: Refinement (only if needed)
+        if critique_data.get("needs_revision"):
+            print(f"✨  Agent Phase 3: Refining based on feedback: {critique_data.get('feedback')}")
+            refine_content = (
+                f"Original Request: {req.description}\n\n"
+                f"Your Initial Draft:\n{raw_content}\n\n"
+                f"Feedback from Senior Designer:\n{critique_data.get('feedback')}\n\n"
+                "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
+            )
+            final_response = get_openai_client().chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
+                    {"role": "user", "content": refine_content}
+                ],
+                response_format={"type": "json_object"},
+            )
+            adventure_data = json.loads(final_response.choices[0].message.content)
+        else:
+            print("✅  No revision needed. Draft is solid.")
 
         normalized_map = _normalize_map(adventure_data.get("map"))
 
@@ -364,9 +505,8 @@ async def generate_adventure(req: AdventureRequest):
 
     except openai.APITimeoutError:
         raise HTTPException(status_code=504, detail="Maestrul Dungeonului a adormit. Răspunsul a întârziat prea mult.")
-    except HTTPException:
-        raise
     except Exception as e:
+        print(f"❌  Adventure generation failed: {str(e)}")
         raise HTTPException(status_code=500, detail={"error": "Generation failed", "detail": str(e)})
 
 

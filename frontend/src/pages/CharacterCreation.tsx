@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { User, Dices, ChevronDown, Check, AlertTriangle, Sparkles, Loader2 } from "lucide-react";
+import { Dices, ChevronDown, Check, AlertTriangle, Sparkles, Loader2 } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useGame, CharacterStats, type CharacterData } from "@/context/GameContext";
 import { apiFetch } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { CharacterAvatarPicker } from "@/components/CharacterAvatarPicker";
 
 const RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"];
 const CLASSES = ["Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"];
@@ -92,6 +94,8 @@ const STAT_LABELS: Record<StatKey, string> = {
 };
 
 function CharacterSheet({ character }: { character: CharacterData }) {
+  const { updateCharacterAvatar } = useGame();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -103,19 +107,20 @@ function CharacterSheet({ character }: { character: CharacterData }) {
         Your Hero
       </h1>
       <p className="text-muted-foreground font-body text-sm mb-8">
-        Character sheet — view only. Use &quot;New Character&quot; in the sidebar to start over.
+        Character sheet — view only. Open Switch Character to forge a new hero.
       </p>
 
       <div className="narrative-panel space-y-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-40 h-40 rounded-full border-2 border-gold bg-card flex items-center justify-center glow-gold">
-              <User className="h-16 w-16 text-primary/50" />
-            </div>
-            <span className="font-display text-xs uppercase tracking-widest text-muted-foreground">
-              Character Avatar
-            </span>
-          </div>
+          <CharacterAvatarPicker
+            avatar={character.avatar}
+            onAvatarChange={(nextAvatar) => {
+              updateCharacterAvatar(nextAvatar).catch((err) => {
+                toast.error(err instanceof Error ? err.message : "Failed to save avatar.");
+              });
+            }}
+            label="Character Avatar"
+          />
 
           <div className="flex-1 space-y-4">
             <div>
@@ -169,8 +174,9 @@ function CharacterSheet({ character }: { character: CharacterData }) {
 
 const CharacterCreation = () => {
   const navigate = useNavigate();
-  const { setCharacter, setSessionId, character, isLoading } = useGame();
+  const { character, isLoading, isDraftingNewCharacter, createCharacterSave } = useGame();
 
+  const [avatar, setAvatar] = useState<string | null>(null);
   const [hasRolledStats, setHasRolledStats] = useState(false);
   const [availableValues, setAvailableValues] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -298,22 +304,17 @@ const CharacterCreation = () => {
     setIsSubmitting(true);
     setSubmitError(null);
 
-    const characterData = {
+    const characterData: CharacterData = {
       name: data.name,
       race: data.race,
       characterClass: data.characterClass,
       backstory: data.backstory,
       stats: assignedStats as CharacterStats,
+      ...(avatar ? { avatar } : {}),
     };
 
     try {
-      const result = await apiFetch<{ session_id: string; character: CharacterData }>("/character", {
-        method: "POST",
-        body: JSON.stringify(characterData),
-      });
-      setSessionId(result.session_id);
-      setCharacter(result.character);
-      // Redirect to adventure setup after successful creation
+      await createCharacterSave(characterData);
       navigate("/adventure");
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Failed to save character. Please try again.");
@@ -330,7 +331,7 @@ const CharacterCreation = () => {
     );
   }
 
-  if (character) {
+  if (character && !isDraftingNewCharacter) {
     return <CharacterSheet character={character} />;
   }
 
@@ -347,15 +348,7 @@ const CharacterCreation = () => {
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Avatar */}
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-40 h-40 rounded-full border-2 border-gold bg-card flex items-center justify-center glow-gold">
-              <User className="h-16 w-16 text-primary/50" />
-            </div>
-            <span className="font-display text-xs uppercase tracking-widest text-muted-foreground">
-              Character Avatar
-            </span>
-          </div>
+          <CharacterAvatarPicker avatar={avatar} onAvatarChange={setAvatar} label="Character Avatar" />
 
           {/* Form Fields */}
           <div className="flex-1 space-y-6">

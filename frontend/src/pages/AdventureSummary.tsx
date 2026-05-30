@@ -42,7 +42,7 @@ const AdventureSummary = () => {
     summaryDownloaded,
     generateAdventureSummary,
     markSummaryDownloaded,
-    clearAdventureData,
+    beginNextAdventure,
   } = useGame();
 
   const [showNewGameConfirm, setShowNewGameConfirm] = useState(false);
@@ -94,8 +94,9 @@ const AdventureSummary = () => {
       narrative: adventureSummary.narrative,
       stats: stats.map(({ label, value }) => ({ label, value })),
       heroName: character?.name,
+      avatar: character?.avatar ?? undefined,
     };
-  }, [adventureSummary, title, subtitle, stats, character?.name]);
+  }, [adventureSummary, title, subtitle, stats, character?.name, character?.avatar]);
 
   const handleDownloadTxt = () => {
     if (!exportPayload) return;
@@ -115,8 +116,8 @@ const AdventureSummary = () => {
     }
   };
 
-  const startNewAdventure = () => {
-    clearAdventureData();
+  const startNewAdventure = async () => {
+    await beginNextAdventure();
     navigate("/adventure");
   };
 
@@ -125,7 +126,7 @@ const AdventureSummary = () => {
       setShowNewGameConfirm(true);
       return;
     }
-    startNewAdventure();
+    void startNewAdventure();
   };
 
   if (!adventureComplete) {
@@ -284,14 +285,14 @@ const AdventureSummary = () => {
           <AlertDialogHeader>
             <AlertDialogTitle className="font-display tracking-wide">Leave without saving?</AlertDialogTitle>
             <AlertDialogDescription>
-              You haven&apos;t downloaded your adventure summary yet. If you start a new adventure now, this
-              chronicle will be lost unless you save it first.
+              You haven&apos;t downloaded your adventure summary yet. The tale will still be saved to Past
+              Adventures, but grab a PDF or TXT copy if you want it offline.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0">
             <AlertDialogCancel>Stay on Summary</AlertDialogCancel>
             <AlertDialogAction
-              onClick={startNewAdventure}
+              onClick={() => void startNewAdventure()}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Start Anyway

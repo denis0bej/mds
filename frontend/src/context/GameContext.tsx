@@ -1,5 +1,36 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  ReactNode,
+} from "react";
+import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
+import {
+  appendPastAdventure,
+  createEmptySaveData,
+  createSave,
+  deleteSave,
+  fetchLegacyCharacter,
+  fetchSave,
+  isAdventureArchived,
+  listSaves,
+  mergePastAdventures,
+  readLocalLegacyState,
+  clearLocalLegacyState,
+  setActiveSave,
+  updateSave,
+  updateSaveCharacter,
+  type GameSaveSummary,
+  type SaveData,
+} from "@/lib/gameSaves";
+import {
+  createPastAdventureArchive,
+  type PastAdventureArchive,
+} from "@/lib/pastAdventures";
 import type { NarrativeMessage } from "@/components/NarrationPanel";
 import {
   applyAutoHealingPotion,
@@ -58,6 +89,7 @@ export interface CharacterData {
   characterClass: string;
   backstory: string;
   stats: CharacterStats;
+  avatar?: string;
 }
 
 export type SceneType =
@@ -145,25 +177,6 @@ export type EncounterData = {
   completion_reason?: AdventureEndReason;
 };
 
-const ADVENTURE_STORAGE_KEY = "dnd_adventure_state";
-
-type PersistedAdventure = {
-  narrativeIntro: string | null;
-  adventureDescription: string | null;
-  mainMission: MainMission | null;
-  map: GameMap | null;
-  currentNodeId: string | null;
-  narrativeHistory: NarrativeMessage[];
-  progressCompletedNodeIds: string[];
-  runtimeState: GameRuntimeState | null;
-  sessionEvents: SessionEvent[];
-  sessionStats: SessionStats;
-  adventureComplete: boolean;
-  adventureEndReason: AdventureEndReason | null;
-  adventureSummary: AdventureSummaryData | null;
-  summaryDownloaded: boolean;
-};
-
 export type AdventureSummaryData = {
   title: string;
   narrative: string;
@@ -177,19 +190,6 @@ export type AdventureSummaryData = {
     location_names?: string[];
   };
 };
-
-function loadPersistedAdventure(): PersistedAdventure | null {
-  try {
-    const raw = localStorage.getItem(ADVENTURE_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePersistedAdventure(state: PersistedAdventure) {
-  localStorage.setItem(ADVENTURE_STORAGE_KEY, JSON.stringify(state));
-}
 
 export type GameActionResult = {
   category: "question" | "simple_action" | "complex_action";
@@ -387,72 +387,98 @@ interface GameState {
   ) => void;
   updateMap: (mapData: GameMap) => void;
   clearAdventureData: () => void;
+  beginNextAdventure: () => Promise<void>;
   enterLocation: (nodeId: string, travelPrompt?: string) => Promise<void>;
   travelToLocation: (nodeId: string, prompt: string) => Promise<void>;
   submitAction: (action: string) => Promise<void>;
   generateAdventureSummary: () => Promise<AdventureSummaryData>;
+  updateCharacterAvatar: (avatar: string) => Promise<void>;
   clearAnimateMessage: () => void;
-  startNewCharacter: () => void;
   isLoading: boolean;
+  activeSaveId: string | null;
+  savesList: GameSaveSummary[];
+  isDraftingNewCharacter: boolean;
+  isSwitchingSave: boolean;
+  startNewCharacter: () => void;
+  switchToSave: (saveId: string) => Promise<void>;
+  deleteCharacterSave: (saveId: string) => Promise<void>;
+  createCharacterSave: (character: CharacterData) => Promise<void>;
 }
 
 const GameContext = createContext<GameState | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
-  const persisted = loadPersistedAdventure();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [character, setCharacter] = useState<CharacterData | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(localStorage.getItem("dnd_session_id"));
-  const [narrativeIntro, setNarrativeIntro] = useState<string | null>(persisted?.narrativeIntro ?? null);
-  const [adventureDescription, setAdventureDescription] = useState<string | null>(
-    persisted?.adventureDescription ?? null,
-  );
-  const [mainMission, setMainMission] = useState<MainMission | null>(persisted?.mainMission ?? null);
-  const [map, setMap] = useState<GameMap | null>(persisted?.map ?? null);
-  const [currentNodeId, setCurrentNodeId] = useState<string | null>(persisted?.currentNodeId ?? null);
-  const [narrativeHistory, setNarrativeHistory] = useState<NarrativeMessage[]>(
-    persisted?.narrativeHistory ?? [],
-  );
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [activeSaveId, setActiveSaveId] = useState<string | null>(null);
+  const [savesList, setSavesList] = useState<GameSaveSummary[]>([]);
+  const [isDraftingNewCharacter, setIsDraftingNewCharacter] = useState(false);
+  const [isSwitchingSave, setIsSwitchingSave] = useState(false);
+  const [narrativeIntro, setNarrativeIntro] = useState<string | null>(null);
+  const [adventureDescription, setAdventureDescription] = useState<string | null>(null);
+  const [mainMission, setMainMission] = useState<MainMission | null>(null);
+  const [map, setMap] = useState<GameMap | null>(null);
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
+  const [narrativeHistory, setNarrativeHistory] = useState<NarrativeMessage[]>([]);
   const [animateMessageId, setAnimateMessageId] = useState<string | null>(null);
   const [currentEncounter, setCurrentEncounter] = useState<EncounterData | null>(null);
   const [isEnteringNode, setIsEnteringNode] = useState(false);
   const [enterNodeError, setEnterNodeError] = useState<string | null>(null);
-  const [progressCompletedNodeIds, setProgressCompletedNodeIds] = useState<string[]>(
-    persisted?.progressCompletedNodeIds ?? [],
-  );
-  const [runtimeState, setRuntimeState] = useState<GameRuntimeState | null>(
-    persisted?.runtimeState ?? null,
-  );
+  const [progressCompletedNodeIds, setProgressCompletedNodeIds] = useState<string[]>([]);
+  const [runtimeState, setRuntimeState] = useState<GameRuntimeState | null>(null);
   const [lastRoll, setLastRoll] = useState<GameActionResult["roll_result"] | null>(null);
   const [lastCheck, setLastCheck] = useState<GameActionResult["check"] | null>(null);
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [sessionStats, setSessionStats] = useState<SessionStats>(
-    persisted?.sessionStats ?? createInitialSessionStats(),
-  );
-  const [adventureComplete, setAdventureComplete] = useState(persisted?.adventureComplete ?? false);
-  const [adventureEndReason, setAdventureEndReason] = useState<AdventureEndReason | null>(
-    persisted?.adventureEndReason ?? null,
-  );
-  const [adventureSummary, setAdventureSummary] = useState<AdventureSummaryData | null>(
-    persisted?.adventureSummary ?? null,
-  );
+  const [sessionStats, setSessionStats] = useState<SessionStats>(createInitialSessionStats());
+  const [adventureComplete, setAdventureComplete] = useState(false);
+  const [adventureEndReason, setAdventureEndReason] = useState<AdventureEndReason | null>(null);
+  const [adventureSummary, setAdventureSummary] = useState<AdventureSummaryData | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [summaryDownloaded, setSummaryDownloaded] = useState(persisted?.summaryDownloaded ?? false);
+  const [summaryDownloaded, setSummaryDownloaded] = useState(false);
+  const [pastAdventures, setPastAdventures] = useState<PastAdventureArchive[]>([]);
+  const [activeAdventureId, setActiveAdventureId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>(() => {
-    if (persisted?.sessionEvents?.length) return persisted.sessionEvents;
-    if (persisted?.narrativeHistory?.length) {
-      return backfillEventsFromHistory(persisted.narrativeHistory);
-    }
-    return [];
-  });
+  const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveInFlightRef = useRef<Promise<void> | null>(null);
+  const characterRef = useRef<CharacterData | null>(null);
+  const pastAdventuresRef = useRef<PastAdventureArchive[]>([]);
+  const activeAdventureIdRef = useRef<string | null>(null);
+  const persistLockRef = useRef(false);
   const [eventLogVisible, setEventLogVisibleState] = useState(loadEventLogVisible);
   const [eventLogMinimized, setEventLogMinimized] = useState(false);
 
   const appendSessionEvent = useCallback((event: SessionEvent) => {
     setSessionEvents((prev) => [...prev, event]);
+  }, []);
+
+  useEffect(() => {
+    characterRef.current = character;
+  }, [character]);
+
+  useEffect(() => {
+    pastAdventuresRef.current = pastAdventures;
+  }, [pastAdventures]);
+
+  useEffect(() => {
+    activeAdventureIdRef.current = activeAdventureId;
+  }, [activeAdventureId]);
+
+  const cancelAutosave = useCallback(() => {
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  }, []);
+
+  const awaitPendingAutosave = useCallback(async () => {
+    if (autosaveInFlightRef.current) {
+      await autosaveInFlightRef.current;
+    }
   }, []);
 
   const markSummaryDownloaded = useCallback(() => {
@@ -464,8 +490,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     saveEventLogVisible(visible);
   }, []);
 
-  useEffect(() => {
-    savePersistedAdventure({
+  const buildSaveData = useCallback((): SaveData => {
+    return {
       narrativeIntro,
       adventureDescription,
       mainMission,
@@ -480,8 +506,192 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       adventureEndReason,
       adventureSummary,
       summaryDownloaded,
-    });
+      pastAdventures: pastAdventuresRef.current,
+      activeAdventureId: activeAdventureIdRef.current,
+    };
   }, [
+    narrativeIntro,
+    adventureDescription,
+    mainMission,
+    map,
+    currentNodeId,
+    narrativeHistory,
+    progressCompletedNodeIds,
+    runtimeState,
+    sessionEvents,
+    sessionStats,
+    adventureComplete,
+    adventureEndReason,
+    adventureSummary,
+    summaryDownloaded,
+  ]);
+
+  const hydrateFromSave = useCallback((save: GameSaveSummary) => {
+    const data = save.save_data;
+    setCharacter(save.character);
+    setNarrativeIntro(data.narrativeIntro);
+    setAdventureDescription(data.adventureDescription);
+    setMainMission(data.mainMission);
+    setMap(data.map);
+    setCurrentNodeId(data.currentNodeId);
+    setNarrativeHistory(data.narrativeHistory);
+    setProgressCompletedNodeIds(data.progressCompletedNodeIds);
+    setRuntimeState(data.runtimeState);
+    setSessionEvents(
+      data.sessionEvents.length
+        ? data.sessionEvents
+        : backfillEventsFromHistory(data.narrativeHistory),
+    );
+    setSessionStats(data.sessionStats);
+    setAdventureComplete(data.adventureComplete);
+    setAdventureEndReason(data.adventureEndReason);
+    setAdventureSummary(data.adventureSummary);
+    setSummaryDownloaded(data.summaryDownloaded ?? false);
+    setPastAdventures(data.pastAdventures ?? []);
+    setActiveAdventureId(data.activeAdventureId ?? null);
+    pastAdventuresRef.current = data.pastAdventures ?? [];
+    activeAdventureIdRef.current = data.activeAdventureId ?? null;
+    setCurrentEncounter(null);
+    setAnimateMessageId(null);
+    setLastRoll(null);
+    setLastCheck(null);
+    setActionError(null);
+    setEnterNodeError(null);
+    setSummaryError(null);
+    setIsDraftingNewCharacter(false);
+  }, []);
+
+  const refreshSavesList = useCallback(async (userId: string) => {
+    const saves = await listSaves(userId);
+    setSavesList(saves);
+    return saves;
+  }, []);
+
+  const tryMigrateLocalSave = useCallback(async (userId: string) => {
+    const { sessionId: legacySessionId, saveData } = readLocalLegacyState();
+    if (!legacySessionId) return null;
+
+    const legacyCharacter = await fetchLegacyCharacter(legacySessionId);
+    if (!legacyCharacter) return null;
+
+    const created = await createSave(
+      userId,
+      legacyCharacter,
+      saveData ?? createEmptySaveData(),
+    );
+    clearLocalLegacyState();
+    return created;
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!isAuthenticated || !user) {
+      setActiveSaveId(null);
+      setSessionId(null);
+      setSavesList([]);
+      setIsDraftingNewCharacter(false);
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setIsLoading(true);
+      try {
+        let saves = await listSaves(user.id);
+        if (cancelled) return;
+
+        if (saves.length === 0) {
+          const migrated = await tryMigrateLocalSave(user.id);
+          if (cancelled) return;
+          if (migrated) {
+            saves = await listSaves(user.id);
+          }
+        }
+
+        setSavesList(saves);
+
+        const active = saves.find((save) => save.is_active) ?? saves[0];
+        if (active) {
+          hydrateFromSave(active);
+          setActiveSaveId(active.id);
+          setSessionId(active.id);
+        }
+      } catch (err) {
+        console.error("Failed to load cloud saves:", err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, isAuthenticated, user?.id, hydrateFromSave, tryMigrateLocalSave]);
+
+  useEffect(() => {
+    if (!user || !activeSaveId || !character || isDraftingNewCharacter || isSwitchingSave) {
+      return;
+    }
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      const task = (async () => {
+        if (persistLockRef.current) return;
+
+        const latestCharacter = characterRef.current;
+        if (!latestCharacter || !activeSaveId) return;
+
+        try {
+          let saveData = buildSaveData();
+          if (persistLockRef.current) return;
+
+          const latest = await fetchSave(activeSaveId);
+          if (persistLockRef.current) return;
+
+          const mergedPast = mergePastAdventures(
+            saveData.pastAdventures,
+            latest.save_data.pastAdventures,
+          );
+          if (mergedPast.length !== saveData.pastAdventures.length) {
+            saveData = { ...saveData, pastAdventures: mergedPast };
+            pastAdventuresRef.current = mergedPast;
+            setPastAdventures(mergedPast);
+          }
+
+          await updateSave(activeSaveId, latestCharacter, saveData);
+          await refreshSavesList(user.id);
+        } catch (err) {
+          console.error("Autosave failed:", err);
+        }
+      })();
+
+      autosaveInFlightRef.current = task;
+      void task.finally(() => {
+        if (autosaveInFlightRef.current === task) {
+          autosaveInFlightRef.current = null;
+        }
+      });
+    }, 1200);
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+      }
+    };
+  }, [
+    user,
+    activeSaveId,
+    character,
+    isDraftingNewCharacter,
+    isSwitchingSave,
+    buildSaveData,
+    refreshSavesList,
     narrativeIntro,
     adventureDescription,
     mainMission,
@@ -553,6 +763,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     mission: MainMission | null = null,
   ) => {
     if (!mapData?.nodes) return;
+    const nextAdventureId = crypto.randomUUID();
     const startNodeId = mapData.nodes.find((n) => n.status === "current")?.id ?? null;
     const initialStats = startNodeId
       ? recordLocationVisit(createInitialSessionStats(), startNodeId)
@@ -582,6 +793,8 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureSummary(null);
     setSummaryError(null);
     setSummaryDownloaded(false);
+    setActiveAdventureId(nextAdventureId);
+    activeAdventureIdRef.current = nextAdventureId;
   };
 
   const updateMap = (mapData: GameMap) => {
@@ -608,18 +821,187 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setAdventureSummary(null);
     setSummaryError(null);
     setSummaryDownloaded(false);
-    localStorage.removeItem(ADVENTURE_STORAGE_KEY);
+    setActiveAdventureId(null);
+    activeAdventureIdRef.current = null;
   };
 
-  const clearAnimateMessage = () => {
-    setAnimateMessageId(null);
-  };
+  const archiveCurrentAdventure = useCallback(
+    async (summary: AdventureSummaryData | null) => {
+      if (!character || !user || !activeSaveId || !adventureComplete) return;
+
+      cancelAutosave();
+      await awaitPendingAutosave();
+      persistLockRef.current = true;
+
+      try {
+        const adventureId = activeAdventureIdRef.current ?? crypto.randomUUID();
+        const baseSaveData = buildSaveData();
+
+        if (isAdventureArchived(baseSaveData, adventureId)) return;
+
+        const archive = createPastAdventureArchive({
+          id: adventureId,
+          completedAt: new Date().toISOString(),
+          endReason: adventureEndReason ?? "victory",
+          adventureDescription,
+          mainMission,
+          narrativeIntro,
+          summary,
+          sessionStats,
+          sessionEvents,
+          narrativeHistory,
+          map,
+          progressCompletedNodeIds,
+          characterSnapshot: character,
+          runtimeState,
+        });
+
+        const updatedSaveData = appendPastAdventure(
+          { ...baseSaveData, adventureSummary: summary, activeAdventureId: adventureId },
+          archive,
+        );
+
+        pastAdventuresRef.current = updatedSaveData.pastAdventures;
+        activeAdventureIdRef.current = adventureId;
+        setPastAdventures(updatedSaveData.pastAdventures);
+        setActiveAdventureId(adventureId);
+        setAdventureSummary(summary);
+
+        await updateSave(activeSaveId, character, updatedSaveData);
+        await refreshSavesList(user.id);
+      } finally {
+        persistLockRef.current = false;
+      }
+    },
+    [
+      character,
+      user,
+      activeSaveId,
+      adventureComplete,
+      cancelAutosave,
+      awaitPendingAutosave,
+      buildSaveData,
+      adventureEndReason,
+      adventureDescription,
+      mainMission,
+      narrativeIntro,
+      sessionStats,
+      sessionEvents,
+      narrativeHistory,
+      map,
+      progressCompletedNodeIds,
+      runtimeState,
+      refreshSavesList,
+    ],
+  );
+
+  const beginNextAdventure = useCallback(async () => {
+    if (!user || !activeSaveId || !character) {
+      clearAdventureData();
+      return;
+    }
+
+    cancelAutosave();
+    await awaitPendingAutosave();
+    persistLockRef.current = true;
+
+    try {
+      if (adventureComplete && adventureSummary) {
+        await archiveCurrentAdventure(adventureSummary);
+      }
+
+      const latest = await fetchSave(activeSaveId);
+      const preservedPast = latest.save_data.pastAdventures;
+
+      clearAdventureData();
+
+      const saveData: SaveData = {
+        ...createEmptySaveData(),
+        pastAdventures: preservedPast,
+        activeAdventureId: null,
+      };
+
+      pastAdventuresRef.current = preservedPast;
+      activeAdventureIdRef.current = null;
+      setPastAdventures(preservedPast);
+      await updateSave(activeSaveId, character, saveData);
+      await refreshSavesList(user.id);
+    } finally {
+      persistLockRef.current = false;
+    }
+  }, [
+    user,
+    activeSaveId,
+    character,
+    adventureComplete,
+    adventureSummary,
+    archiveCurrentAdventure,
+    cancelAutosave,
+    awaitPendingAutosave,
+    refreshSavesList,
+  ]);
 
   const startNewCharacter = useCallback(() => {
-    clearAdventureData();
-    setCharacter(null);
+    setIsDraftingNewCharacter(true);
+    setActiveSaveId(null);
     setSessionId(null);
-    localStorage.removeItem("dnd_session_id");
+    setCharacter(null);
+    clearAdventureData();
+  }, []);
+
+  const createCharacterSave = useCallback(
+    async (nextCharacter: CharacterData) => {
+      if (!user) throw new Error("You must be logged in to save a character.");
+      const created = await createSave(user.id, nextCharacter, createEmptySaveData());
+      setSavesList(await listSaves(user.id));
+      hydrateFromSave(created);
+      setActiveSaveId(created.id);
+      setSessionId(created.id);
+      setIsDraftingNewCharacter(false);
+    },
+    [user, hydrateFromSave],
+  );
+
+  const switchToSave = useCallback(
+    async (saveId: string) => {
+      if (!user) return;
+      setIsSwitchingSave(true);
+      try {
+        const save = await fetchSave(saveId);
+        await setActiveSave(user.id, saveId);
+        hydrateFromSave(save);
+        setActiveSaveId(saveId);
+        setSessionId(saveId);
+        setSavesList(await listSaves(user.id));
+      } finally {
+        setIsSwitchingSave(false);
+      }
+    },
+    [user, hydrateFromSave],
+  );
+
+  const deleteCharacterSave = useCallback(
+    async (saveId: string) => {
+      if (!user) return;
+      await deleteSave(saveId);
+      const saves = await listSaves(user.id);
+
+      if (activeSaveId === saveId) {
+        const next = saves.find((save) => save.is_active) ?? saves[0];
+        if (next) {
+          await switchToSave(next.id);
+        } else {
+          startNewCharacter();
+        }
+      } else {
+        setSavesList(saves);
+      }
+    },
+    [user, activeSaveId, switchToSave, startNewCharacter],
+  );
+
+  const clearAnimateMessage = useCallback(() => {
+    setAnimateMessageId(null);
   }, []);
 
   const enterLocation = useCallback(
@@ -971,6 +1353,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setAdventureSummary(summary);
+      await archiveCurrentAdventure(summary);
       return summary;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to generate summary.";
@@ -988,32 +1371,31 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     map,
     adventureEndReason,
     mainMission,
+    archiveCurrentAdventure,
   ]);
 
-  useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem("dnd_session_id", sessionId);
-      apiFetch<{ character: CharacterData }>(`/character/${sessionId}`)
-        .then((data) => {
-          if (data.character) {
-            setCharacter(data.character);
-          } else {
-            localStorage.removeItem("dnd_session_id");
-            setSessionId(null);
-            setCharacter(null);
-          }
-        })
-        .catch((err) => {
-          console.error("Error fetching session:", err);
-          // Don't necessarily clear character on network error, only on 404/invalid data
-        })
-        .finally(() => setIsLoading(false));
-    } else {
-      localStorage.removeItem("dnd_session_id");
-      setCharacter(null);
-      setIsLoading(false);
-    }
-  }, [sessionId]);
+  const updateCharacterAvatar = useCallback(
+    async (avatar: string) => {
+      if (!character || !activeSaveId || !user) {
+        throw new Error("No character loaded.");
+      }
+
+      const updatedCharacter = { ...character, avatar };
+      characterRef.current = updatedCharacter;
+      setCharacter(updatedCharacter);
+
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+
+      const saved = await updateSaveCharacter(activeSaveId, updatedCharacter);
+      setSavesList((prev) =>
+        prev.map((save) => (save.id === saved.id ? { ...save, character: saved.character } : save)),
+      );
+    },
+    [character, activeSaveId, user],
+  );
 
   return (
     <GameContext.Provider
@@ -1054,13 +1436,22 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
         setAdventureData,
         updateMap,
         clearAdventureData,
-        startNewCharacter,
+        beginNextAdventure,
         enterLocation,
         travelToLocation,
         submitAction,
         generateAdventureSummary,
+        updateCharacterAvatar,
         clearAnimateMessage,
-        isLoading,
+        isLoading: isLoading || authLoading,
+        activeSaveId,
+        savesList,
+        isDraftingNewCharacter,
+        isSwitchingSave,
+        startNewCharacter,
+        switchToSave,
+        deleteCharacterSave,
+        createCharacterSave,
       }}
     >
       {children}
