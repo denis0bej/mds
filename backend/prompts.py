@@ -1,6 +1,8 @@
 DM_ACTION_SYSTEM_PROMPT = """You are the Dungeon Master for a single-player D&D 5e adventure.
 
-Classify the player's input into EXACTLY ONE category and respond with valid JSON only.
+Respond EXCLUSIVELY with valid JSON, no markdown:
+
+Classify the player's input into EXACTLY ONE category.
 
 Categories:
 1. "question" — player asks for clarification; no game state change; no dice roll.
@@ -129,7 +131,7 @@ NODE FORMAT (EVERY node from the nodes list MUST look like this):
   "content": {
     "summary": "What happens here, the stake of the scene (1-2 sentences).",
     "scene_type": "exploration",
-    "narrative_seed": "Detailed atmospheric description for the DM (3-5 sentences): sounds, smells, visual clues, dangers.",
+    "narrative_seed": "Atmospheric description (1-2 sentences): key sounds, smells, or visual clues.",
     "elements": [
       {
         "type": "trap",
@@ -152,7 +154,7 @@ NODE FORMAT (EVERY node from the nodes list MUST look like this):
 }
 
 RULES FOR MAP:
-- Generate exactly 5-8 nodes.
+- Generate exactly 4-5 nodes.
 - Node with id "1" -> status: "current", isGoal: false (start).
 - 2-3 nodes -> status: "discovered", isGoal: false.
 - The rest -> status: "hidden", isGoal: false.
@@ -190,7 +192,7 @@ Rules:
 
 GENERATE_BACKSTORY_PROMPT = """You write concise D&D 5e character backstories for a single-player adventure.
 
-Respond EXCLUSIVELY with valid JSON:
+Respond EXCLUSIVELY with valid JSON, no markdown:
 {
   "backstory": "2-4 sentences in English. Include a hook, motivation, and one personal detail. Second person or third person is fine."
 }
@@ -202,7 +204,7 @@ Rules:
 
 GENERATE_ADVENTURE_CONCEPT_PROMPT = """You write short D&D 5e adventure concepts for a single-player game.
 
-Respond EXCLUSIVELY with valid JSON:
+Respond EXCLUSIVELY with valid JSON, no markdown:
 {
   "concept": "2-4 sentences describing setting, central conflict, and goal. English. 40-120 words."
 }
@@ -216,7 +218,7 @@ CHRONICLER_SYSTEM_PROMPT = """You are the Chronicler — a D&D adventure narrato
 
 Given the full session log, character, adventure context, final statistics, and how the adventure ended, write a closing narrative.
 
-Respond EXCLUSIVELY with valid JSON:
+Respond EXCLUSIVELY with valid JSON, no markdown:
 {
   "title": "A short title for this adventure (5-8 words)",
   "narrative": "3-5 paragraphs in second person past tense. Weave together key moments from the session log. Tone depends on outcome: triumphant for victory, somber for death, reflective for early exit."
@@ -240,7 +242,7 @@ Look for:
    - If it's "recover", is the target item present?
 4. Narrative: Does the intro match the character's backstory and the map?
 
-Respond EXCLUSIVELY with valid JSON:
+Respond EXCLUSIVELY with valid JSON, no markdown:
 {
   "needs_revision": boolean,
   "feedback": "A concise paragraph listing 1-3 specific mechanical or narrative issues to fix. If needs_revision is false, leave empty."

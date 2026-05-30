@@ -41,14 +41,24 @@ _openai_client: Optional[OpenAI] = None
 def get_openai_client() -> OpenAI:
     global _openai_client
     if _openai_client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail="OPENAI_API_KEY is not configured. Add it to backend/.env for AI features.",
-            )
-        _openai_client = OpenAI(api_key=api_key, timeout=60.0)
+        # Punctăm către API-ul local expus de Ollama
+        _openai_client = OpenAI(
+            base_url="http://localhost:11434/v1",
+            api_key="ollama", # Librăria cere o cheie, dar Ollama acceptă orice string
+            timeout=600.0 # Crescut la 10 minute pentru inferența locală pe hardware mai slab
+        )
     return _openai_client
+
+
+def clean_json_response(raw_text: str) -> str:
+    text = raw_text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
 # Asigurăm existența folderului pentru sesiuni
 os.makedirs("data", exist_ok=True)
@@ -116,7 +126,7 @@ class GenerateConceptRequest(BaseModel):
 
 def _call_json_llm(system_prompt: str, user_content: str) -> dict:
     response = get_openai_client().chat.completions.create(
-        model="gpt-4o",
+        model="llama3.1",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
@@ -124,8 +134,9 @@ def _call_json_llm(system_prompt: str, user_content: str) -> dict:
         response_format={"type": "json_object"},
     )
     raw = response.choices[0].message.content
+    cleaned_raw = clean_json_response(raw)
     try:
-        return json.loads(raw)
+        return json.loads(cleaned_raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid AI response format.")
 
@@ -359,29 +370,33 @@ async def generate_adventure_stream(req: AdventureRequest):
             # STEP 1: Draft Generation
             yield f"data: {json.dumps({'status': 'drafting', 'message': 'The World Architect is drafting the initial map...'})}\n\n"
             response = get_openai_client().chat.completions.create(
-                model="gpt-4o",
+                model="llama3.1",
                 messages=[
                     {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_content}
                 ],
                 response_format={"type": "json_object"},
                 max_tokens=8192,
-                temperature=0.85,
+                temperature=0.7,
             )
             raw_content = response.choices[0].message.content
-            adventure_data = json.loads(raw_content)
+            cleaned_raw = clean_json_response(raw_content)
+            adventure_data = json.loads(cleaned_raw)
 
             # STEP 2: Critique
             yield f"data: {json.dumps({'status': 'critiquing', 'message': 'A Senior Designer is evaluating the balance and logic...'})}\n\n"
             critique_response = get_openai_client().chat.completions.create(
-                model="gpt-4o",
+                model="llama3.1",
                 messages=[
                     {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
                     {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
                 ],
                 response_format={"type": "json_object"},
+                temperature=0.7,
             )
-            critique_data = json.loads(critique_response.choices[0].message.content)
+            raw_critique = critique_response.choices[0].message.content
+            cleaned_critique = clean_json_response(raw_critique)
+            critique_data = json.loads(cleaned_critique)
             
             # STEP 3: Refinement (only if needed)
             if critique_data.get("needs_revision"):
@@ -393,14 +408,17 @@ async def generate_adventure_stream(req: AdventureRequest):
                     "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
                 )
                 final_response = get_openai_client().chat.completions.create(
-                    model="gpt-4o",
+                    model="llama3.1",
                     messages=[
                         {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                         {"role": "user", "content": refine_content}
                     ],
                     response_format={"type": "json_object"},
+                    temperature=0.7,
                 )
-                adventure_data = json.loads(final_response.choices[0].message.content)
+                raw_final = final_response.choices[0].message.content
+                cleaned_final = clean_json_response(raw_final)
+                adventure_data = json.loads(cleaned_final)
             else:
                 yield f"data: {json.dumps({'status': 'polishing', 'message': 'Adventure is solid. Polishing the details...'})}\n\n"
 
@@ -449,29 +467,33 @@ async def generate_adventure(req: AdventureRequest):
         # STEP 1: Draft Generation
         print("🛠️  Agent Phase 1: World Architect drafting initial map...")
         response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
+            model="llama3.1",
             messages=[
                 {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
             ],
             response_format={"type": "json_object"},
             max_tokens=8192,
-            temperature=0.85,
+            temperature=0.7,
         )
         raw_content = response.choices[0].message.content
-        adventure_data = json.loads(raw_content)
+        cleaned_raw = clean_json_response(raw_content)
+        adventure_data = json.loads(cleaned_raw)
 
         # STEP 2: Critique
         print("🧐  Agent Phase 2: Design Critic evaluating draft...")
         critique_response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
+            model="llama3.1",
             messages=[
                 {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
                 {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
             ],
             response_format={"type": "json_object"},
+            temperature=0.7,
         )
-        critique_data = json.loads(critique_response.choices[0].message.content)
+        raw_critique = critique_response.choices[0].message.content
+        cleaned_critique = clean_json_response(raw_critique)
+        critique_data = json.loads(cleaned_critique)
         
         # STEP 3: Refinement (only if needed)
         if critique_data.get("needs_revision"):
@@ -483,14 +505,17 @@ async def generate_adventure(req: AdventureRequest):
                 "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
             )
             final_response = get_openai_client().chat.completions.create(
-                model="gpt-4o",
+                model="llama3.1",
                 messages=[
                     {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                     {"role": "user", "content": refine_content}
                 ],
                 response_format={"type": "json_object"},
+                temperature=0.7,
             )
-            adventure_data = json.loads(final_response.choices[0].message.content)
+            raw_final = final_response.choices[0].message.content
+            cleaned_final = clean_json_response(raw_final)
+            adventure_data = json.loads(cleaned_final)
         else:
             print("✅  No revision needed. Draft is solid.")
 
@@ -620,7 +645,7 @@ Character:
 
     try:
         response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
+            model="llama3.1",
             messages=[
                 {"role": "system", "content": ENCOUNTER_PRESENTATION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -629,7 +654,7 @@ Character:
         )
         raw_content = response.choices[0].message.content
         try:
-            encounter = json.loads(raw_content)
+            encounter = json.loads(clean_json_response(raw_content))
         except json.JSONDecodeError:
             raise HTTPException(status_code=500, detail={
                 "error": "Invalid encounter format",
@@ -663,7 +688,7 @@ async def game_action(req: GameActionRequest):
 
     try:
         classify_response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
+            model="llama3.1",
             messages=[
                 {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -672,7 +697,7 @@ async def game_action(req: GameActionRequest):
         )
         raw = classify_response.choices[0].message.content
         try:
-            result = json.loads(raw)
+            result = json.loads(clean_json_response(raw))
         except json.JSONDecodeError:
             raise HTTPException(status_code=500, detail="Invalid DM response format.")
 
@@ -688,7 +713,7 @@ async def game_action(req: GameActionRequest):
             resolve_content = user_content + f"\n\nRoll result (already resolved by Rules Engine):\n{json.dumps(roll_result, indent=2)}\n\nResolve the action narratively using this outcome."
 
             resolve_response = get_openai_client().chat.completions.create(
-                model="gpt-4o",
+                model="llama3.1",
                 messages=[
                     {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
                     {"role": "user", "content": resolve_content},
@@ -697,7 +722,7 @@ async def game_action(req: GameActionRequest):
             )
             resolved_raw = resolve_response.choices[0].message.content
             try:
-                resolved = json.loads(resolved_raw)
+                resolved = json.loads(clean_json_response(resolved_raw))
             except json.JSONDecodeError:
                 raise HTTPException(status_code=500, detail="Invalid DM roll resolution format.")
 
@@ -755,7 +780,7 @@ Full session log:
 
     try:
         response = get_openai_client().chat.completions.create(
-            model="gpt-4o",
+            model="llama3.1",
             messages=[
                 {"role": "system", "content": CHRONICLER_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -764,7 +789,7 @@ Full session log:
         )
         raw = response.choices[0].message.content
         try:
-            data = json.loads(raw)
+            data = json.loads(clean_json_response(raw))
         except json.JSONDecodeError:
             raise HTTPException(status_code=500, detail="Invalid summary format from AI.")
 
