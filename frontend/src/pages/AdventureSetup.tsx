@@ -101,8 +101,11 @@ function AdventureConceptSheet({
   );
 }
 
+import { useSettings } from "@/context/SettingsContext";
+
 const AdventureSetup = () => {
   const navigate = useNavigate();
+  const { aiProvider } = useSettings();
   const {
     character,
     setAdventureData,
@@ -133,7 +136,10 @@ const AdventureSetup = () => {
     try {
       const data = await apiFetch<{ concept: string }>("/adventure/generate-concept", {
         method: "POST",
-        body: JSON.stringify({ character: character ?? undefined }),
+        body: JSON.stringify({ 
+          character: character ?? undefined,
+          ai_provider: aiProvider
+        }),
       });
       setAdventureText(data.concept);
     } catch (err) {
@@ -150,7 +156,10 @@ const AdventureSetup = () => {
     setError(null);
     setGenerationMessage("Initializing generation...");
 
-    const body: Record<string, unknown> = { description: adventureText.trim() };
+    const body: Record<string, unknown> = { 
+      description: adventureText.trim(),
+      ai_provider: aiProvider
+    };
     if (character) body.character = character;
 
     try {

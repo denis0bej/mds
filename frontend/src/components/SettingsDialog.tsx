@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Moon, Sun, Type } from "lucide-react";
+import { Settings, Moon, Sun, Type, Cpu, Cloud } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSettings } from "@/context/SettingsContext";
 import {
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 
 export function SettingsDialog() {
   const { theme, setTheme } = useTheme();
-  const { typingSpeed, setTypingSpeed } = useSettings();
+  const { typingSpeed, setTypingSpeed, aiProvider, setAiProvider } = useSettings();
   const [open, setOpen] = useState(false);
 
   const isDark = theme === "dark";
@@ -36,6 +36,49 @@ export function SettingsDialog() {
           </DialogTitle>
         </DialogHeader>
         <div className="grid gap-8 py-6">
+          {/* AI Provider Switcher */}
+          <div className="flex flex-col gap-3">
+            <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
+              AI Master Intelligence
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setAiProvider("ollama")}
+                className={cn(
+                  "flex items-center justify-center gap-2 py-3 rounded-sm border transition-all",
+                  aiProvider === "ollama" 
+                    ? "bg-primary/10 border-primary text-primary shadow-[0_0_15px_rgba(212,175,55,0.1)]" 
+                    : "bg-black/20 border-gold/20 text-muted-foreground hover:border-gold/40"
+                )}
+              >
+                <Cpu className="h-4 w-4" />
+                <div className="flex flex-col items-start">
+                  <span className="text-[10px] font-display uppercase tracking-widest leading-none">Local LLM</span>
+                  <span className="text-[8px] font-body opacity-60">Llama 3.1 (Ollama)</span>
+                </div>
+              </button>
+              
+              <button
+                onClick={() => setAiProvider("openai")}
+                className={cn(
+                  "flex items-center justify-center gap-2 py-3 rounded-sm border transition-all",
+                  aiProvider === "openai" 
+                    ? "bg-primary/10 border-primary text-primary shadow-[0_0_15px_rgba(212,175,55,0.1)]" 
+                    : "bg-black/20 border-gold/20 text-muted-foreground hover:border-gold/40"
+                )}
+              >
+                <Cloud className="h-4 w-4" />
+                <div className="flex flex-col items-start">
+                  <span className="text-[10px] font-display uppercase tracking-widest leading-none">Cloud AI</span>
+                  <span className="text-[8px] font-body opacity-60">GPT-4o (OpenAI)</span>
+                </div>
+              </button>
+            </div>
+            <p className="text-[9px] text-muted-foreground/60 italic px-1">
+              Switching will take effect for the next response or generation.
+            </p>
+          </div>
+
           {/* Custom Theme Switcher */}
           <div className="flex flex-col gap-3">
             <Label className="font-display text-xs uppercase tracking-wider text-muted-foreground">
