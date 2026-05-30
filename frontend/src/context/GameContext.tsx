@@ -60,6 +60,8 @@ import {
   type SessionStats,
 } from "@/lib/sessionStats";
 
+import { useSettings } from "@/context/SettingsContext";
+
 export type { AdventureEndReason } from "@/lib/adventureEnd";
 
 export type MissionType = "slay" | "reach" | "recover";
@@ -409,6 +411,7 @@ const GameContext = createContext<GameState | undefined>(undefined);
 
 export const GameProvider = ({ children }: { children: ReactNode }) => {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { aiProvider } = useSettings();
 
   const [character, setCharacter] = useState<CharacterData | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -1071,6 +1074,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
             adventure_description: adventureDescription,
             recent_history: historyForApi.map((m) => ({ role: m.role, text: m.text })),
             main_mission: mainMission,
+            ai_provider: aiProvider,
             game_state: {
               current_node_id: nodeId,
               visited_node_ids: traveledMap.nodes
@@ -1182,6 +1186,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               text: m.text,
             })),
             main_mission: mainMission,
+            ai_provider: aiProvider,
             game_state: {
               current_node_id: currentNodeId,
               progress_completed_node_ids: progressCompletedNodeIds,
@@ -1343,6 +1348,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           main_mission: mainMission,
           adventure_description: adventureDescription,
           narrative_intro: narrativeIntro,
+          ai_provider: aiProvider,
           map_nodes:
             map?.nodes.map((n) => ({
               id: n.id,

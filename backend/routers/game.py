@@ -35,19 +35,34 @@ from prompts import (
 load_dotenv()
 router = APIRouter()
 
-_openai_client: Optional[OpenAI] = None
+_ollama_client: Optional[OpenAI] = None
+_openai_cloud_client: Optional[OpenAI] = None
 
 
-def get_openai_client() -> OpenAI:
-    global _openai_client
-    if _openai_client is None:
-        # Punctăm către API-ul local expus de Ollama
-        _openai_client = OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama", # Librăria cere o cheie, dar Ollama acceptă orice string
-            timeout=600.0 # Crescut la 10 minute pentru inferența locală pe hardware mai slab
-        )
-    return _openai_client
+def get_ai_client(provider: str = "ollama") -> OpenAI:
+    global _ollama_client, _openai_cloud_client
+    if provider == "openai":
+        if _openai_cloud_client is None:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise HTTPException(
+                    status_code=503,
+                    detail="OPENAI_API_KEY is not configured in .env",
+                )
+            _openai_cloud_client = OpenAI(api_key=api_key, timeout=60.0)
+        return _openai_cloud_client
+    else:
+        if _ollama_client is None:
+            _ollama_client = OpenAI(
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",
+                timeout=600.0
+            )
+        return _ollama_client
+
+
+def get_model_name(provider: str = "ollama") -> str:
+    return "gpt-4o" if provider == "openai" else "llama3.1"
 
 
 def clean_json_response(raw_text: str) -> str:
@@ -78,6 +93,7 @@ class AdventureRequest(BaseModel):
     description: str
     session_id: Optional[str] = None
     character: Optional[dict] = None
+    ai_provider: Optional[str] = "ollama"
 
 class HistoryMessage(BaseModel):
     role: str
@@ -91,6 +107,7 @@ class EnterNodeRequest(BaseModel):
     recent_history: Optional[List[HistoryMessage]] = []
     game_state: Optional[dict] = None
     main_mission: Optional[dict] = None
+    ai_provider: Optional[str] = "ollama"
 
 class GameActionRequest(BaseModel):
     action: str
@@ -101,6 +118,7 @@ class GameActionRequest(BaseModel):
     recent_history: Optional[List[HistoryMessage]] = []
     game_state: Optional[dict] = None
     main_mission: Optional[dict] = None
+    ai_provider: Optional[str] = "ollama"
 
 
 class AdventureSummaryRequest(BaseModel):
@@ -112,21 +130,24 @@ class AdventureSummaryRequest(BaseModel):
     adventure_description: Optional[str] = None
     narrative_intro: Optional[str] = None
     map_nodes: Optional[List[dict]] = None
+    ai_provider: Optional[str] = "ollama"
 
 
 class GenerateBackstoryRequest(BaseModel):
     name: Optional[str] = None
     race: Optional[str] = None
     characterClass: Optional[str] = None
+    ai_provider: Optional[str] = "ollama"
 
 
 class GenerateConceptRequest(BaseModel):
     character: Optional[dict] = None
+    ai_provider: Optional[str] = "ollama"
 
 
-def _call_json_llm(system_prompt: str, user_content: str) -> dict:
-    response = get_openai_client().chat.completions.create(
-        model="llama3.1",
+def _call_json_llm(system_prompt: str, user_content: str, provider: str = "ollama") -> dict:
+    response = get_ai_client(provider).chat.completions.create(
+        model=get_model_name(provider),
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
@@ -284,7 +305,7 @@ async def generate_backstory(req: GenerateBackstoryRequest):
     user_content = "\n".join(parts) if parts else "Create a generic heroic fantasy backstory."
 
     try:
-        data = _call_json_llm(GENERATE_BACKSTORY_PROMPT, user_content)
+        data = _call_json_llm(GENERATE_BACKSTORY_PROMPT, user_content, req.ai_provider)
         backstory = (data.get("backstory") or "").strip()
         if len(backstory) < 10:
             raise HTTPException(status_code=500, detail="Generated backstory was too short.")
@@ -369,8 +390,8 @@ async def generate_adventure_stream(req: AdventureRequest):
         try:
             # STEP 1: Draft Generation
             yield f"data: {json.dumps({'status': 'drafting', 'message': 'The World Architect is drafting the initial map...'})}\n\n"
-            response = get_openai_client().chat.completions.create(
-                model="llama3.1",
+            response = get_ai_client(req.ai_provider).chat.completions.create(
+                model=get_model_name(req.ai_provider),
                 messages=[
                     {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_content}
@@ -385,8 +406,8 @@ async def generate_adventure_stream(req: AdventureRequest):
 
             # STEP 2: Critique
             yield f"data: {json.dumps({'status': 'critiquing', 'message': 'A Senior Designer is evaluating the balance and logic...'})}\n\n"
-            critique_response = get_openai_client().chat.completions.create(
-                model="llama3.1",
+            critique_response = get_ai_client(req.ai_provider).chat.completions.create(
+                model=get_model_name(req.ai_provider),
                 messages=[
                     {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
                     {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
@@ -407,8 +428,8 @@ async def generate_adventure_stream(req: AdventureRequest):
                     f"Feedback from Senior Designer:\n{critique_data.get('feedback')}\n\n"
                     "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
                 )
-                final_response = get_openai_client().chat.completions.create(
-                    model="llama3.1",
+                final_response = get_ai_client(req.ai_provider).chat.completions.create(
+                    model=get_model_name(req.ai_provider),
                     messages=[
                         {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                         {"role": "user", "content": refine_content}
@@ -466,8 +487,8 @@ async def generate_adventure(req: AdventureRequest):
     try:
         # STEP 1: Draft Generation
         print("🛠️  Agent Phase 1: World Architect drafting initial map...")
-        response = get_openai_client().chat.completions.create(
-            model="llama3.1",
+        response = get_ai_client(req.ai_provider).chat.completions.create(
+            model=get_model_name(req.ai_provider),
             messages=[
                 {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
@@ -482,8 +503,8 @@ async def generate_adventure(req: AdventureRequest):
 
         # STEP 2: Critique
         print("🧐  Agent Phase 2: Design Critic evaluating draft...")
-        critique_response = get_openai_client().chat.completions.create(
-            model="llama3.1",
+        critique_response = get_ai_client(req.ai_provider).chat.completions.create(
+            model=get_model_name(req.ai_provider),
             messages=[
                 {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
                 {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
@@ -504,8 +525,8 @@ async def generate_adventure(req: AdventureRequest):
                 f"Feedback from Senior Designer:\n{critique_data.get('feedback')}\n\n"
                 "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
             )
-            final_response = get_openai_client().chat.completions.create(
-                model="llama3.1",
+            final_response = get_ai_client(req.ai_provider).chat.completions.create(
+                model=get_model_name(req.ai_provider),
                 messages=[
                     {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
                     {"role": "user", "content": refine_content}
@@ -644,8 +665,8 @@ Character:
         user_content += f"\n\nGame state:\n{json.dumps(req.game_state, indent=2)}"
 
     try:
-        response = get_openai_client().chat.completions.create(
-            model="llama3.1",
+        response = get_ai_client(req.ai_provider).chat.completions.create(
+            model=get_model_name(req.ai_provider),
             messages=[
                 {"role": "system", "content": ENCOUNTER_PRESENTATION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -687,8 +708,8 @@ async def game_action(req: GameActionRequest):
     runtime_state = _extract_runtime_state(req)
 
     try:
-        classify_response = get_openai_client().chat.completions.create(
-            model="llama3.1",
+        classify_response = get_ai_client(req.ai_provider).chat.completions.create(
+            model=get_model_name(req.ai_provider),
             messages=[
                 {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
@@ -712,8 +733,8 @@ async def game_action(req: GameActionRequest):
 
             resolve_content = user_content + f"\n\nRoll result (already resolved by Rules Engine):\n{json.dumps(roll_result, indent=2)}\n\nResolve the action narratively using this outcome."
 
-            resolve_response = get_openai_client().chat.completions.create(
-                model="llama3.1",
+            resolve_response = get_ai_client(req.ai_provider).chat.completions.create(
+                model=get_model_name(req.ai_provider),
                 messages=[
                     {"role": "system", "content": DM_ACTION_SYSTEM_PROMPT},
                     {"role": "user", "content": resolve_content},
@@ -779,8 +800,8 @@ Full session log:
         user_content += f"\n\nLocations in this adventure:\n{json.dumps(req.map_nodes, indent=2, ensure_ascii=False)}"
 
     try:
-        response = get_openai_client().chat.completions.create(
-            model="llama3.1",
+        response = get_ai_client(req.ai_provider).chat.completions.create(
+            model=get_model_name(req.ai_provider),
             messages=[
                 {"role": "system", "content": CHRONICLER_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},

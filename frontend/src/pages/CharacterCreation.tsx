@@ -172,8 +172,11 @@ function CharacterSheet({ character }: { character: CharacterData }) {
   );
 }
 
+import { useSettings } from "@/context/SettingsContext";
+
 const CharacterCreation = () => {
   const navigate = useNavigate();
+  const { aiProvider } = useSettings();
   const { character, isLoading, isDraftingNewCharacter, createCharacterSave } = useGame();
 
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -226,6 +229,7 @@ const CharacterCreation = () => {
           name: name.trim() || undefined,
           race: race.trim() || undefined,
           characterClass: characterClass.trim() || undefined,
+          ai_provider: aiProvider
         }),
       });
       form.setValue("backstory", data.backstory, { shouldValidate: true, shouldDirty: true });

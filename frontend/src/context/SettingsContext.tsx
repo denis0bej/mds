@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 
+export type AIProvider = "ollama" | "openai";
+
 interface SettingsState {
   typingSpeed: number;
   setTypingSpeed: (speed: number) => void;
+  aiProvider: AIProvider;
+  setAiProvider: (provider: AIProvider) => void;
 }
 
 const SettingsContext = createContext<SettingsState | undefined>(undefined);
@@ -13,13 +17,23 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     return saved ? parseInt(saved, 10) : 18;
   });
 
+  const [aiProvider, setAiProviderState] = useState<AIProvider>(() => {
+    const saved = localStorage.getItem("dnd-ai-provider");
+    return (saved as AIProvider) || "ollama";
+  });
+
   const setTypingSpeed = (speed: number) => {
     setTypingSpeedState(speed);
     localStorage.setItem("dnd-typing-speed", speed.toString());
   };
 
+  const setAiProvider = (provider: AIProvider) => {
+    setAiProviderState(provider);
+    localStorage.setItem("dnd-ai-provider", provider);
+  };
+
   return (
-    <SettingsContext.Provider value={{ typingSpeed, setTypingSpeed }}>
+    <SettingsContext.Provider value={{ typingSpeed, setTypingSpeed, aiProvider, setAiProvider }}>
       {children}
     </SettingsContext.Provider>
   );
