@@ -155,7 +155,7 @@ export function SettingsDialog() {
             />
             <div className="flex justify-between text-[10px] text-muted-foreground uppercase tracking-widest font-display">
               <span>Instant</span>
-              <span>Lent</span>
+              <span>Slow</span>
             </div>
           </div>
         </div>
@@ -164,7 +164,7 @@ export function SettingsDialog() {
             onClick={() => setOpen(false)}
             className="btn-fantasy py-2 h-auto text-[10px]"
           >
-            Salvează Setările
+            Save Settings
           </Button>
         </div>
       </DialogContent>
