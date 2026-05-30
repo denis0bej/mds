@@ -1,4 +1,4 @@
-# 🐉 D&D Vibe Coding Project — AI Dungeon Master & Story Weaver
+# 🐉 D&D Vibe Coding Project — AI Dungeon Master & Story Weaver test
 
 > Acest README este destinat **LLM-urilor** (sau dezvoltatorilor care doresc să re-genereze/înțeleagă prompt-urile și structura proiectului).  
 > Scopul său: **uniformizarea interacțiunii cu AI-urile** în cadrul proiectului nostru de tip *Dungeons & Dragons*, fără a rescrie de fiecare dată același context.
