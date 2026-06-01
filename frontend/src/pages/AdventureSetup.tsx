@@ -133,18 +133,29 @@ const AdventureSetup = () => {
     setIsGeneratingConcept(true);
     setGenerateConceptError(null);
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 90_000);
+
     try {
       const data = await apiFetch<{ concept: string }>("/adventure/generate-concept", {
         method: "POST",
-        body: JSON.stringify({ 
+        signal: controller.signal,
+        body: JSON.stringify({
           character: character ?? undefined,
-          ai_provider: aiProvider
+          ai_provider: aiProvider,
         }),
       });
       setAdventureText(data.concept);
     } catch (err) {
-      setGenerateConceptError(err instanceof Error ? err.message : "Could not generate concept.");
+      const message =
+        err instanceof Error && err.name === "AbortError"
+          ? "Concept generation timed out. Try again or switch AI provider in Settings."
+          : err instanceof Error
+            ? err.message
+            : "Could not generate concept.";
+      setGenerateConceptError(message);
     } finally {
+      window.clearTimeout(timeoutId);
       setIsGeneratingConcept(false);
     }
   };
@@ -156,7 +167,7 @@ const AdventureSetup = () => {
     setError(null);
     setGenerationMessage("Initializing generation...");
 
-    const body: Record<string, unknown> = { 
+    const body: Record<string, unknown> = {
       description: adventureText.trim(),
       ai_provider: aiProvider
     };
@@ -354,11 +365,10 @@ const AdventureSetup = () => {
               whileTap={{ scale: adventureText.trim().length >= 20 ? 0.98 : 1 }}
               onClick={handleGenerate}
               disabled={adventureText.trim().length < 20}
-              className={`btn-fantasy flex items-center gap-3 text-base px-12 py-4 ${
-                adventureText.trim().length < 20
+              className={`btn-fantasy flex items-center gap-3 text-base px-12 py-4 ${adventureText.trim().length < 20
                   ? "opacity-40 cursor-not-allowed"
                   : "animate-pulse-glow"
-              }`}
+                }`}
             >
               <Sparkles className="h-5 w-5" />
               Generate Adventure

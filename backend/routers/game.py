@@ -7,6 +7,7 @@ from openai import OpenAI
 import os
 import uuid
 import json
+import asyncio
 from dotenv import load_dotenv
 from rules_engine import (
     roll_d20,
@@ -165,6 +166,32 @@ def _call_json_llm(system_prompt: str, user_content: str, provider: str = "ollam
         return json.loads(cleaned_raw)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid AI response format.")
+
+
+async def _call_json_llm_async(system_prompt: str, user_content: str, provider: str = "ollama") -> dict:
+    """Run sync LLM client off the event loop so other requests are not blocked."""
+    return await asyncio.to_thread(_call_json_llm, system_prompt, user_content, provider)
+
+
+def _chat_completion_json(
+    system_prompt: str,
+    user_content: str,
+    provider: str,
+    *,
+    max_tokens: int = 8192,
+    temperature: float = 0.7,
+) -> str:
+    response = get_ai_client(provider).chat.completions.create(
+        model=get_model_name(provider),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        response_format={"type": "json_object"},
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
+    return clean_json_response(response.choices[0].message.content or "")
 
 
 def _format_history(recent_history: Optional[List[HistoryMessage]]) -> str:
@@ -356,7 +383,7 @@ async def generate_adventure_concept(req: GenerateConceptRequest):
         user_content += f"\n\nCharacter context:\n{json.dumps(slim, ensure_ascii=False)}"
 
     try:
-        data = _call_json_llm(GENERATE_ADVENTURE_CONCEPT_PROMPT, user_content, req.ai_provider)
+        data = await _call_json_llm_async(GENERATE_ADVENTURE_CONCEPT_PROMPT, user_content, req.ai_provider)
         concept = (data.get("concept") or "").strip()
         if len(concept) < 20:
             raise HTTPException(status_code=500, detail="Generated concept was too short.")
@@ -397,33 +424,24 @@ async def generate_adventure_stream(req: AdventureRequest):
         try:
             # STEP 1: Draft Generation
             yield f"data: {json.dumps({'status': 'drafting', 'message': 'The World Architect is drafting the initial map...'})}\n\n"
-            response = get_ai_client(req.ai_provider).chat.completions.create(
-                model=get_model_name(req.ai_provider),
-                messages=[
-                    {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"},
-                max_tokens=8192,
-                temperature=0.7,
+            cleaned_raw = await asyncio.to_thread(
+                _chat_completion_json,
+                WORLD_ARCHITECT_SYSTEM_PROMPT,
+                user_content,
+                req.ai_provider,
             )
-            raw_content = response.choices[0].message.content
-            cleaned_raw = clean_json_response(raw_content)
+            raw_content = cleaned_raw
             adventure_data = json.loads(cleaned_raw)
 
             # STEP 2: Critique
             yield f"data: {json.dumps({'status': 'critiquing', 'message': 'A Senior Designer is evaluating the balance and logic...'})}\n\n"
-            critique_response = get_ai_client(req.ai_provider).chat.completions.create(
-                model=get_model_name(req.ai_provider),
-                messages=[
-                    {"role": "system", "content": ADVENTURE_CRITIC_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}"}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7,
+            cleaned_critique = await asyncio.to_thread(
+                _chat_completion_json,
+                ADVENTURE_CRITIC_SYSTEM_PROMPT,
+                f"User Request: {req.description}\n\nDrafted Adventure:\n{raw_content}",
+                req.ai_provider,
+                max_tokens=4096,
             )
-            raw_critique = critique_response.choices[0].message.content
-            cleaned_critique = clean_json_response(raw_critique)
             critique_data = json.loads(cleaned_critique)
             
             # STEP 3: Refinement (only if needed)
@@ -435,17 +453,12 @@ async def generate_adventure_stream(req: AdventureRequest):
                     f"Feedback from Senior Designer:\n{critique_data.get('feedback')}\n\n"
                     "Please output the corrected, final adventure JSON. Ensure it is balanced and follows all original rules."
                 )
-                final_response = get_ai_client(req.ai_provider).chat.completions.create(
-                    model=get_model_name(req.ai_provider),
-                    messages=[
-                        {"role": "system", "content": WORLD_ARCHITECT_SYSTEM_PROMPT},
-                        {"role": "user", "content": refine_content}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.7,
+                cleaned_final = await asyncio.to_thread(
+                    _chat_completion_json,
+                    WORLD_ARCHITECT_SYSTEM_PROMPT,
+                    refine_content,
+                    req.ai_provider,
                 )
-                raw_final = final_response.choices[0].message.content
-                cleaned_final = clean_json_response(raw_final)
                 adventure_data = json.loads(cleaned_final)
             else:
                 yield f"data: {json.dumps({'status': 'polishing', 'message': 'Adventure is solid. Polishing the details...'})}\n\n"
