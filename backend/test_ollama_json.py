@@ -1,49 +1,40 @@
 import asyncio
 import json
-import sys
-import os
 
-# Adăugăm directorul curent în path pentru a putea importa din routers
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from json_utils import clean_json_response, parse_agent_json
+from routers.game import get_ai_client, get_model_name
 
-try:
-    from routers.game import get_openai_client, clean_json_response
-except ImportError:
-    # Dacă rulăm din folderul backend, încercăm import direct
-    from routers.game import get_openai_client, clean_json_response
 
 async def test_ollama():
-    print("🚀 Testând conexiunea către Ollama (llama3.1)...")
-    client = get_openai_client()
-    
+    print("Testing Ollama connection (llama3.1)...")
+    client = get_ai_client("ollama")
+
     system_prompt = "You are a test bot. Respond EXCLUSIVELY with valid JSON, no markdown."
-    user_prompt = "Generate a dummy JSON with a 'status' key set to 'success'."
-    
+    user_prompt = 'Generate a dummy JSON with a "status" key set to "success".'
+
     try:
         response = client.chat.completions.create(
-            model="llama3.1",
+            model=get_model_name("ollama"),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             response_format={"type": "json_object"},
         )
-        
-        raw_content = response.choices[0].message.content
-        print(f"\n--- Rezultat Brut ---\n{raw_content}\n")
-        
-        cleaned_content = clean_json_response(raw_content)
-        parsed_json = json.loads(cleaned_content)
-        
-        print(f"--- Rezultat Parsat ---\n{json.dumps(parsed_json, indent=2)}\n")
-        
+
+        raw_content = response.choices[0].message.content or ""
+        print(f"\n--- Raw ---\n{raw_content}\n")
+
+        parsed_json = parse_agent_json(raw_content)
+        print(f"--- Parsed ---\n{json.dumps(parsed_json, indent=2)}\n")
+
         if parsed_json.get("status") == "success":
-            print("✅ SUCCES: Backend-ul comunică perfect cu Ollama!")
+            print("SUCCESS: Backend communicates with Ollama and JSON parses correctly.")
         else:
-            print("⚠️ ATENȚIE: Răspunsul a fost parsat, dar conținutul nu este cel așteptat.")
-            
+            print("WARNING: Parsed JSON but unexpected content.")
     except Exception as e:
-        print(f"❌ EROARE: Testul a eșuat. Detalii: {str(e)}")
+        print(f"ERROR: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_ollama())

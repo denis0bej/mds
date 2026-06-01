@@ -18,6 +18,19 @@ type ApiOptions = RequestInit & {
   auth?: boolean;
 };
 
+function extractErrorMessage(data: { detail?: unknown }): string {
+  const detail = data.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(", ");
+  }
+  if (detail && typeof detail === "object") {
+    const nested = detail as { detail?: string; error?: string; message?: string };
+    return nested.detail || nested.message || nested.error || "Request failed.";
+  }
+  return "Request failed.";
+}
+
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const { auth = false, headers, ...rest } = options;
   const requestHeaders = new Headers(headers);
@@ -41,13 +54,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const message =
-      typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data.detail)
-          ? data.detail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(", ")
-          : data.detail?.detail || "Request failed.";
-    throw new Error(message);
+    throw new Error(extractErrorMessage(data));
   }
 
   return data as T;

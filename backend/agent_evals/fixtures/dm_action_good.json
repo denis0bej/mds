@@ -1,0 +1,5 @@
+{
+  "classification": "skill_check",
+  "narrative": "You strain against the rusted lock.",
+  "check": { "ability": "DEX", "dc": 14, "reason": "Pick the lock" }
+}

@@ -1,0 +1,10 @@
+{
+  "narrativeIntro": "The mist rolls over the ancient road as your party approaches the ruined keep.",
+  "map": {
+    "nodes": [
+      { "id": "start", "name": "Crossroads", "description": "A fork in the road." }
+    ],
+    "edges": []
+  },
+  "mainMission": { "title": "Seal the Rift", "type": "reach_goal" }
+}

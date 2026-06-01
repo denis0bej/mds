@@ -31,6 +31,7 @@ from prompts import (
     CHRONICLER_SYSTEM_PROMPT,
     ADVENTURE_CRITIC_SYSTEM_PROMPT,
 )
+from json_utils import clean_json_response
 
 load_dotenv()
 router = APIRouter()
@@ -65,15 +66,19 @@ def get_model_name(provider: str = "ollama") -> str:
     return "gpt-4o" if provider == "openai" else "llama3.1"
 
 
-def clean_json_response(raw_text: str) -> str:
-    text = raw_text.strip()
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    if text.endswith("```"):
-        text = text[:-3]
-    return text.strip()
+def character_for_llm(character: Optional[dict]) -> Optional[dict]:
+    """Strip bulky fields (e.g. base64 avatar) before sending character to an LLM."""
+    if not character:
+        return None
+    slim = {
+        "name": character.get("name"),
+        "race": character.get("race"),
+        "characterClass": character.get("characterClass"),
+        "backstory": character.get("backstory"),
+        "stats": character.get("stats"),
+    }
+    return {key: value for key, value in slim.items() if value is not None}
+
 
 # Asigurăm existența folderului pentru sesiuni
 os.makedirs("data", exist_ok=True)
@@ -177,7 +182,7 @@ Current location:
 {json.dumps(req.node, indent=2)}
 
 Character:
-{json.dumps(req.character, indent=2)}"""
+{json.dumps(character_for_llm(req.character) or req.character, indent=2)}"""
 
     if req.adventure_description:
         user_content += f"\n\nAdventure concept:\n{req.adventure_description}"
@@ -347,10 +352,11 @@ async def update_character_avatar(session_id: str, body: CharacterAvatarUpdate):
 async def generate_adventure_concept(req: GenerateConceptRequest):
     user_content = "Create an adventure concept for a solo D&D player."
     if req.character:
-        user_content += f"\n\nCharacter context:\n{json.dumps(req.character, ensure_ascii=False)}"
+        slim = character_for_llm(req.character)
+        user_content += f"\n\nCharacter context:\n{json.dumps(slim, ensure_ascii=False)}"
 
     try:
-        data = _call_json_llm(GENERATE_ADVENTURE_CONCEPT_PROMPT, user_content)
+        data = _call_json_llm(GENERATE_ADVENTURE_CONCEPT_PROMPT, user_content, req.ai_provider)
         concept = (data.get("concept") or "").strip()
         if len(concept) < 20:
             raise HTTPException(status_code=500, detail="Generated concept was too short.")
@@ -378,8 +384,9 @@ async def generate_adventure_stream(req: AdventureRequest):
         character_context = req.character
     
     user_content = f"Descriere aventură: {req.description}"
-    if character_context:
-        user_content += f"\n\nContext personaj: {json.dumps(character_context, ensure_ascii=False)}"
+    slim_character = character_for_llm(character_context)
+    if slim_character:
+        user_content += f"\n\nContext personaj: {json.dumps(slim_character, ensure_ascii=False)}"
     user_content += (
         "\n\nReamintire: FIECARE nod TREBUIE să aibă câmpul \"content\" complet populat "
         "(summary, scene_type, narrative_seed, elements cu mechanics, completion_conditions). "
@@ -476,8 +483,9 @@ async def generate_adventure(req: AdventureRequest):
         character_context = req.character
     
     user_content = f"Descriere aventură: {req.description}"
-    if character_context:
-        user_content += f"\n\nContext personaj: {json.dumps(character_context, ensure_ascii=False)}"
+    slim_character = character_for_llm(character_context)
+    if slim_character:
+        user_content += f"\n\nContext personaj: {json.dumps(slim_character, ensure_ascii=False)}"
     user_content += (
         "\n\nReamintire: FIECARE nod TREBUIE să aibă câmpul \"content\" complet populat "
         "(summary, scene_type, narrative_seed, elements cu mechanics, completion_conditions). "
@@ -653,7 +661,7 @@ async def enter_node(req: EnterNodeRequest):
 {json.dumps(req.node, indent=2)}
 
 Character:
-{json.dumps(req.character, indent=2)}"""
+{json.dumps(character_for_llm(req.character) or req.character, indent=2)}"""
 
     if req.adventure_description:
         user_content += f"\n\nAdventure concept:\n{req.adventure_description}"
@@ -777,7 +785,7 @@ async def generate_adventure_summary(req: AdventureSummaryRequest):
         log_text = "(No session events recorded.)"
 
     user_content = f"""Character:
-{json.dumps(req.character, indent=2, ensure_ascii=False)}
+{json.dumps(character_for_llm(req.character) or req.character, indent=2, ensure_ascii=False)}
 
 Final statistics:
 {json.dumps(req.stats, indent=2)}"""
